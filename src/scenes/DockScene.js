@@ -1,0 +1,460 @@
+// Side-view dock with two modes:
+//
+//   pier  — Walk along the pier with A/D (or arrows). SPACE casts the rod;
+//           bobber lands on water; FishingController runs the timing-bar
+//           catch flow. Casts that would land on the pier are refused.
+//
+//   dive  — S near the pier edge plunges you into the water. WASD/arrows
+//           swim 8-way. Touch a fish silhouette to grab it (recordCatch +
+//           addGold instantly). Oxygen ticks down from the equipped tank's
+//           capacity; on 0 you auto-resurface (drowned). S resurfaces
+//           voluntarily.
+
+import Phaser from 'phaser';
+import { FishingController } from '../controllers/FishingController.js';
+import {
+  getCurrentZone, getFishPoolForZone, getEquippedTank, getEquippedFin,
+  getEquippedGlove, recordCatch, addGold, redeemCode
+} from '../state.js';
+
+const PLAYER_SPEED = 180;
+const ROD_TIP_DX = 110;
+const ROD_BASE_DX = 6;
+const PIER_EDGE_MARGIN = 8;       // bobber must land this far past pier edge
+const PIER_EDGE_DIVE_RANGE = 60;  // must be within this many px of pier edge to dive
+const SWIM_SPEED = 110;           // diver px/sec — water is heavy
+const FISH_CATCH_RADIUS = 24;     // distance threshold for grabbing a fish
+const FISH_RESPAWN_MS = 5000;     // caught fish reappear after this delay
+
+export class DockScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'DockScene' });
+  }
+
+  create() {
+    if (!this.scene.isActive('HUDScene')) this.scene.launch('HUDScene');
+
+    this.uiRoot = this.add.container(0, 0);
+    this.fishSprites = [];
+
+    this.controller = null;
+    this.player = null;
+    this.rodTip = { x: 0, y: 0 };
+
+    // Dive state
+    this.mode = 'pier';
+    this.diver = null;
+    this.oxygenSec = 0;
+    this.oxygenMax = 0;
+    this._diveReturnX = 0;
+
+    this.keys = this.input.keyboard.addKeys({
+      left: 'A', right: 'D', up: 'W',
+      leftArrow: 'LEFT', rightArrow: 'RIGHT', upArrow: 'UP',
+      descend: 'SPACE'
+    });
+
+    this._buildScene();
+
+    this.scale.on('resize', this._onResize, this);
+    this.registry.events.on('changedata-currentZoneId', this._onZoneChange, this);
+
+    this.input.keyboard.on('keydown-E', () => this._tryOpen('ShopScene'));
+    this.input.keyboard.on('keydown-F', () => this._tryOpen('FishdexScene'));
+    this.input.keyboard.on('keydown-Z', () => this._tryOpen('ZoneSelectScene'));
+    this.input.keyboard.on('keydown-T', () => this._tryOpen('TutorialScene'));
+    this.input.keyboard.on('keydown-S', () => this._toggleDive());
+    this.input.keyboard.on('keydown-R', () => this._promptRedeem());
+
+    // First-launch tutorial
+    if (!this.registry.get('tutorialSeen')) {
+      this.scene.launch('TutorialScene');
+      this.scene.pause();
+    }
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this._shutdown, this);
+  }
+
+  _tryOpen(key) {
+    if (this.mode === 'dive') {
+      this._flashPrompt('Surface first.');
+      return;
+    }
+    if (!this.controller || !this.controller.isIdle()) {
+      this._flashPrompt('Reel in first.');
+      return;
+    }
+    this.scene.launch(key);
+    this.scene.pause();
+  }
+
+  _flashPrompt(text, duration) {
+    const hud = this.scene.get('HUDScene');
+    if (hud && hud.flashPrompt) hud.flashPrompt(text, duration);
+  }
+
+  _promptRedeem() {
+    if (this.mode === 'dive') { this._flashPrompt('Surface first.'); return; }
+    if (this.controller && !this.controller.isIdle()) { this._flashPrompt('Reel in first.'); return; }
+    // Native browser prompt — modal, captures the code without needing a
+    // bespoke text-input UI. Phaser keys won't fire while it's open.
+    const code = window.prompt('Enter redeem code:');
+    if (code === null) return; // user cancelled
+    const result = redeemCode(this.registry, code);
+    if (!result.ok) {
+      this._flashPrompt(result.error, 2400);
+    } else {
+      this._flashPrompt(`Redeemed: ${result.label}!`, 3000);
+    }
+  }
+
+  _onZoneChange() { this._buildScene(); }
+  _onResize() { this._buildScene(); }
+
+  _buildScene() {
+    const { width, height } = this.scale;
+    const zone = getCurrentZone(this.registry);
+
+    // Reset dive state on rebuild.
+    this.mode = 'pier';
+    this.oxygenSec = 0;
+
+    if (this.controller) { this.controller.destroy(); this.controller = null; }
+    this.uiRoot.removeAll(true);
+    this.fishSprites.forEach(f => { if (f._respawnTimer) f._respawnTimer.remove(); f.destroy(); });
+    this.fishSprites = [];
+    if (this.diver) { this.diver.destroy(); this.diver = null; }
+
+    const waterlineY = Math.floor(height * 0.45);
+    const pierRightX = Math.floor(width * 0.30);
+    const pierTopY = waterlineY - 18;
+    const pierBottomY = height;
+
+    // --- Backdrop ---
+    const sky = this.add.rectangle(0, 0, width, waterlineY, zone.skyColor)
+      .setOrigin(0, 0).setDepth(0);
+    const water = this.add.rectangle(0, waterlineY, width, height - waterlineY,
+      zone.waterColor).setOrigin(0, 0).setDepth(1);
+    const deep = this.add.rectangle(0, waterlineY + (height - waterlineY) * 0.55,
+      width, (height - waterlineY) * 0.45, zone.waterDeep)
+      .setOrigin(0, 0).setAlpha(0.55).setDepth(2);
+
+    // --- Pier ---
+    const pier = this.add.rectangle(0, pierTopY, pierRightX, pierBottomY - pierTopY,
+      0x6a4a2a).setOrigin(0, 0).setStrokeStyle(2, 0x3a2a14).setDepth(5);
+    const planks = [];
+    for (let i = 1; i < 4; i++) {
+      planks.push(this.add.line(0, 0, 0, pierTopY + i * 12, pierRightX, pierTopY + i * 12,
+        0x4a3a1e, 0.6).setOrigin(0, 0).setDepth(5));
+    }
+    const piling = this.add.rectangle(pierRightX - 6, pierTopY, 12, pierBottomY - pierTopY,
+      0x4a2e16).setOrigin(0, 0).setDepth(6);
+
+    // --- Pier player ---
+    const playerXMin = 24;
+    const playerXMax = pierRightX - 20;
+    const startX = Phaser.Math.Clamp(pierRightX - 60, playerXMin, playerXMax);
+    const feetY = pierTopY;
+    const body = this.add.rectangle(startX, feetY, 14, 24, 0x2e6ea8)
+      .setOrigin(0.5, 1).setStrokeStyle(2, 0x14304a).setDepth(8);
+    const head = this.add.circle(startX, feetY - 32, 8, 0xf2c89a)
+      .setStrokeStyle(2, 0x4a2e1a).setDepth(9);
+    const rod = this.add.line(0, 0, 0, 0, 0, 0, 0xf4e4bc, 1)
+      .setOrigin(0, 0).setLineWidth(3).setDepth(10);
+
+    this.player = {
+      x: startX, feetY,
+      xMin: playerXMin, xMax: playerXMax,
+      body, head, rod
+    };
+    this.pierRightX = pierRightX;
+    this.waterlineY = waterlineY;
+    this._syncPlayerVisuals();
+
+    // --- Diver (hidden until dive starts) ---
+    this.diver = this._makeDiver();
+    this.diver.setVisible(false).setDepth(11);
+
+    // --- Fish silhouettes ---
+    const pool = getFishPoolForZone(zone.id);
+    const swimL = pierRightX + 24;
+    const swimR = width - 30;
+    const swimTop = waterlineY + 30;
+    const swimBottom = height - 30;
+    pool.forEach((fish, i) => {
+      const y = swimTop + ((i + 0.5) / pool.length) * (swimBottom - swimTop);
+      const sprite = this._makeFishSprite(fish);
+      sprite.setPosition(swimL + Math.random() * (swimR - swimL), y);
+      sprite.setDepth(3);
+      const speed = 22 + Math.random() * 30;
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      sprite.setData('species', fish);
+      sprite.setData('speed', speed * dir);
+      sprite.setData('homeY', y);
+      sprite.setData('bounds', { l: swimL, r: swimR });
+      sprite.setScale(dir, 1);
+      this.fishSprites.push(sprite);
+    });
+
+    this.swimBounds = { l: pierRightX + 16, r: width - 16, t: waterlineY + 14, b: height - 16 };
+
+    // --- Zone label ---
+    const title = this.add.text(width - 20, 20, zone.name, {
+      fontFamily: 'serif', fontSize: '22px', color: '#f4e4bc',
+      stroke: '#000', strokeThickness: 3
+    }).setOrigin(1, 0).setDepth(50);
+    const blurb = this.add.text(width - 20, 48, zone.blurb, {
+      fontFamily: 'serif', fontSize: '13px', color: '#cbb98a', fontStyle: 'italic'
+    }).setOrigin(1, 0).setDepth(50);
+
+    this.uiRoot.add([
+      sky, water, deep, pier, ...planks, piling,
+      body, head, rod, this.diver, title, blurb
+    ]);
+
+    // --- Controller ---
+    this.controller = new FishingController(this, {
+      rodTip: this.rodTip,
+      landY: waterlineY + 6,
+      castRangeX: 200,
+      barCenter: { x: width / 2, y: height - 110 },
+      canCast: () => this._canCastHere()
+    });
+    this.controller.on('cast:rejected', () => this._flashPrompt('Aim past the pier — walk to the edge.'));
+  }
+
+  _canCastHere() {
+    return this.rodTip.x + 200 > this.pierRightX + PIER_EDGE_MARGIN;
+  }
+
+  _makeDiver() {
+    const c = this.add.container(0, 0);
+    const body = this.add.rectangle(0, 0, 14, 22, 0x2e6ea8)
+      .setOrigin(0.5).setStrokeStyle(2, 0x14304a);
+    const head = this.add.circle(0, -16, 8, 0xf2c89a)
+      .setStrokeStyle(2, 0x4a2e1a);
+    const fin = this.add.triangle(0, 14, -6, 0, 6, 0, 0, 8, 0x14304a);
+    const goggles = this.add.rectangle(0, -16, 12, 4, 0x000000).setAlpha(0.6);
+    c.add([fin, body, head, goggles]);
+    return c;
+  }
+
+  _toggleDive() {
+    if (this.mode === 'dive') {
+      this._endDive('Surfaced.');
+      return;
+    }
+    // Entering dive — must be idle and near the pier edge.
+    if (!this.controller || !this.controller.isIdle()) {
+      this._flashPrompt('Reel in first.');
+      return;
+    }
+    if (!this.player) return;
+    if (this.pierRightX - this.player.x > PIER_EDGE_DIVE_RANGE) {
+      this._flashPrompt('Walk to the pier edge to dive.');
+      return;
+    }
+    this._beginDive();
+  }
+
+  _beginDive() {
+    const tank = getEquippedTank(this.registry);
+    this.oxygenMax = tank.oxygenSec;
+    this.oxygenSec = tank.oxygenSec;
+    this._diveReturnX = this.player.x;
+
+    this.mode = 'dive';
+    this.controller.setPaused(true);
+
+    // Hide pier player + rod.
+    this.player.body.setVisible(false);
+    this.player.head.setVisible(false);
+    this.player.rod.setVisible(false);
+
+    // Place diver just past the pier piling, at the surface.
+    this.diver.setPosition(this.pierRightX + 22, this.waterlineY + 14);
+    this.diver.setVisible(true);
+    this._splashAt(this.pierRightX + 22, this.waterlineY);
+    this._flashPrompt(`Dive! Tank: ${tank.name} (${tank.oxygenSec}s). S to surface.`);
+  }
+
+  _endDive(reason) {
+    this.mode = 'pier';
+    this.controller.setPaused(false);
+    this.diver.setVisible(false);
+    this.player.body.setVisible(true);
+    this.player.head.setVisible(true);
+    this.player.rod.setVisible(true);
+    this._splashAt(this.diver.x, this.waterlineY);
+    this.player.x = this._diveReturnX;
+    this._syncPlayerVisuals();
+    this.oxygenSec = 0;
+    if (reason) this._flashPrompt(reason);
+  }
+
+  _splashAt(x, y) {
+    for (let i = 0; i < 6; i++) {
+      const drop = this.add.circle(x, y, 3 + Math.random() * 2, 0xc8e0f0).setDepth(40);
+      const dx = (Math.random() - 0.5) * 80;
+      const dy = -20 - Math.random() * 30;
+      this.tweens.add({
+        targets: drop,
+        x: x + dx, y: y + dy,
+        alpha: { from: 1, to: 0 },
+        duration: 500 + Math.random() * 200,
+        onComplete: () => drop.destroy()
+      });
+    }
+  }
+
+  _syncPlayerVisuals() {
+    const p = this.player;
+    if (!p) return;
+    p.body.x = p.x;
+    p.head.x = p.x;
+    const rodBaseX = p.x + ROD_BASE_DX;
+    const rodBaseY = p.feetY - 18;
+    const rodTipX = p.x + ROD_TIP_DX;
+    const rodTipY = this.waterlineY - 60;
+    p.rod.setTo(rodBaseX, rodBaseY, rodTipX, rodTipY);
+    this.rodTip.x = rodTipX;
+    this.rodTip.y = rodTipY;
+  }
+
+  _makeFishSprite(fish) {
+    const c = this.add.container(0, 0);
+    const tail = this.add.triangle(-fish.body.w / 2 - 4, 0,
+      0, -fish.body.h / 2,
+      0, fish.body.h / 2,
+      -fish.body.w * 0.25, 0,
+      fish.body.color).setAlpha(0.85);
+    const body = this.add.ellipse(0, 0, fish.body.w, fish.body.h, fish.body.color)
+      .setAlpha(0.85);
+    const stripe = this.add.ellipse(0, 0, fish.body.w * 0.6, fish.body.h * 0.25,
+      fish.body.accent).setAlpha(0.55);
+    const eye = this.add.circle(fish.body.w * 0.32, -1, 1.6, 0x000000);
+    c.add([tail, body, stripe, eye]);
+    return c;
+  }
+
+  update(time, delta) {
+    const dt = delta / 1000;
+
+    if (this.mode === 'pier') {
+      this._updatePier(dt);
+    } else {
+      this._updateDive(dt);
+    }
+
+    if (this.controller) this.controller.update(delta);
+    this._updateFish(dt);
+  }
+
+  _updatePier(dt) {
+    if (!this.player || !this.controller) return;
+    if (this.controller.state === 'biting') return; // lock walking mid-hook
+
+    let dx = 0;
+    if (this.keys.left.isDown || this.keys.leftArrow.isDown) dx -= 1;
+    if (this.keys.right.isDown || this.keys.rightArrow.isDown) dx += 1;
+    if (dx === 0) return;
+
+    const next = Phaser.Math.Clamp(
+      this.player.x + dx * PLAYER_SPEED * dt,
+      this.player.xMin, this.player.xMax
+    );
+    if (next !== this.player.x) {
+      this.player.x = next;
+      this._syncPlayerVisuals();
+    }
+  }
+
+  _updateDive(dt) {
+    if (!this.diver) return;
+
+    // Tick oxygen
+    this.oxygenSec = Math.max(0, this.oxygenSec - dt);
+    if (this.oxygenSec === 0) {
+      this._endDive('Out of air!');
+      return;
+    }
+
+    // 8-way swim. SPACE descends; W/Up ascends.
+    let dx = 0, dy = 0;
+    if (this.keys.left.isDown || this.keys.leftArrow.isDown) dx -= 1;
+    if (this.keys.right.isDown || this.keys.rightArrow.isDown) dx += 1;
+    if (this.keys.up.isDown || this.keys.upArrow.isDown) dy -= 1;
+    if (this.keys.descend.isDown) dy += 1;
+    if (dx !== 0 || dy !== 0) {
+      const len = Math.hypot(dx, dy);
+      dx /= len; dy /= len;
+      const b = this.swimBounds;
+      const speed = SWIM_SPEED * getEquippedFin(this.registry).swimSpeedMult;
+      this.diver.x = Phaser.Math.Clamp(this.diver.x + dx * speed * dt, b.l, b.r);
+      this.diver.y = Phaser.Math.Clamp(this.diver.y + dy * speed * dt, b.t, b.b);
+      if (dx !== 0) this.diver.setScale(dx > 0 ? 1 : -1, 1);
+    }
+
+    // Touch fish to catch — but rares are too slippery to grab by hand.
+    // You can see them swimming, you just can't catch them this way.
+    for (const f of this.fishSprites) {
+      if (!f.visible) continue;
+      const d = Phaser.Math.Distance.Between(this.diver.x, this.diver.y, f.x, f.y);
+      if (d >= FISH_CATCH_RADIUS) continue;
+      const species = f.getData('species');
+      const glove = getEquippedGlove(this.registry);
+      if (!glove.allowed.includes(species.rarity)) {
+        if (!this._rareBumpedRecently) {
+          this._rareBumpedRecently = true;
+          this._flashPrompt(`${species.rarity[0].toUpperCase()}${species.rarity.slice(1)} — your gloves can't hold it.`);
+          this.time.delayedCall(2200, () => { this._rareBumpedRecently = false; });
+        }
+        continue;
+      }
+      this._grabFish(f);
+    }
+  }
+
+  _grabFish(fishSprite) {
+    const species = fishSprite.getData('species');
+    if (!species) return;
+
+    const { isNew } = recordCatch(this.registry, species.id);
+    const newlyUnlocked = addGold(this.registry, species.value);
+    this.registry.set('lastCatchToast', {
+      speciesId: species.id, name: species.name, value: species.value,
+      isNew, perfect: false, newlyUnlocked
+    });
+
+    // Hide the sprite, schedule respawn elsewhere in the swim area.
+    fishSprite.setVisible(false);
+    if (fishSprite._respawnTimer) fishSprite._respawnTimer.remove();
+    fishSprite._respawnTimer = this.time.delayedCall(FISH_RESPAWN_MS, () => {
+      const b = fishSprite.getData('bounds');
+      const homeY = fishSprite.getData('homeY');
+      fishSprite.x = b.l + Math.random() * (b.r - b.l);
+      fishSprite.y = homeY;
+      fishSprite.setVisible(true);
+    });
+  }
+
+  _updateFish(dt) {
+    for (const f of this.fishSprites) {
+      if (!f.visible) continue;
+      let speed = f.getData('speed');
+      const b = f.getData('bounds');
+      f.x += speed * dt;
+      if (f.x < b.l) { f.x = b.l; speed = Math.abs(speed); f.setData('speed', speed); }
+      if (f.x > b.r) { f.x = b.r; speed = -Math.abs(speed); f.setData('speed', speed); }
+      f.setScale(speed >= 0 ? 1 : -1, 1);
+    }
+  }
+
+  _shutdown() {
+    this.scale.off('resize', this._onResize, this);
+    this.registry.events.off('changedata-currentZoneId', this._onZoneChange, this);
+    this.input.keyboard.removeAllListeners();
+    if (this.controller) { this.controller.destroy(); this.controller = null; }
+    this.fishSprites.forEach(f => { if (f._respawnTimer) f._respawnTimer.remove(); });
+  }
+}
