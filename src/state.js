@@ -100,6 +100,10 @@ export function redeemCode(registry, raw) {
   if (used.includes(code)) return { ok: false, error: 'Already redeemed.' };
   registry.set('redeemedCodes', [...used, code]);
   if (reward.gold) addGold(registry, reward.gold);
+  if (reward.zone) {
+    unlockZone(registry, reward.zone);
+    setCurrentZone(registry, reward.zone);
+  }
   return { ok: true, reward, label: reward.label };
 }
 
