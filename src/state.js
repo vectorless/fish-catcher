@@ -39,29 +39,47 @@ export function initState(registry) {
 }
 
 // --- Inventory -----------------------------------------------------------
-// Each entry is `{ speciesId, rainbow }`. Rainbow fish (10% roll at catch)
-// sell for 2× their species value. Selling at the shop converts entries to
-// gold; the perfect-catch bonus and +5g tip are paid immediately so they
-// don't depend on whether the player ever returns to sell.
+// Each entry is `{ speciesId, variant }` where `variant` is one of
+// 'rainbow' (3×), 'shiny' (10×), or undefined (normal). Variants are
+// mutually exclusive — shiny is rolled first, then rainbow. Selling at
+// the shop converts entries to gold; the perfect-catch bonus and +5g tip
+// are paid immediately so they don't depend on whether the player ever
+// returns to sell.
 
-export const RAINBOW_MULT = 2;
+export const VARIANT_MULT = { rainbow: 3, shiny: 10 };
+export const VARIANT_DISPLAY = {
+  rainbow: { prefix: 'Rainbow ', color: '#ff66ff' },
+  shiny:   { prefix: 'Shiny ',   color: '#ffe27a' }
+};
+
+// Roll a variant for a fresh catch. Mutually exclusive: shiny wins over
+// rainbow if both would have rolled.
+export function rollCatchVariant() {
+  if (Math.random() < 0.02) return 'shiny';
+  if (Math.random() < 0.10) return 'rainbow';
+  return null;
+}
+
+function _variantMult(variant) {
+  return VARIANT_MULT[variant] || 1;
+}
 
 function _entryValue(entry) {
   const v = FISH[entry.speciesId]?.value || 0;
-  return entry.rainbow ? v * RAINBOW_MULT : v;
+  return v * _variantMult(entry.variant);
 }
 
 export function addToInventory(registry, speciesId, opts = {}) {
   const inv = registry.get('inventory') || [];
-  registry.set('inventory', [...inv, { speciesId, rainbow: !!opts.rainbow }]);
+  registry.set('inventory', [...inv, { speciesId, variant: opts.variant || null }]);
 }
 
 export function getInventoryAggregate(registry) {
   const inv = registry.get('inventory') || [];
   const buckets = new Map();
   for (const e of inv) {
-    const key = `${e.speciesId}|${e.rainbow ? 1 : 0}`;
-    const b = buckets.get(key) || { speciesId: e.speciesId, rainbow: e.rainbow, count: 0 };
+    const key = `${e.speciesId}|${e.variant || ''}`;
+    const b = buckets.get(key) || { speciesId: e.speciesId, variant: e.variant, count: 0 };
     b.count++;
     buckets.set(key, b);
   }
@@ -69,9 +87,9 @@ export function getInventoryAggregate(registry) {
   for (const b of buckets.values()) {
     const species = FISH[b.speciesId];
     if (!species) continue;
-    const unitValue = b.rainbow ? species.value * RAINBOW_MULT : species.value;
+    const unitValue = species.value * _variantMult(b.variant);
     out.push({
-      speciesId: b.speciesId, species, rainbow: b.rainbow,
+      speciesId: b.speciesId, species, variant: b.variant,
       count: b.count, unitValue, totalValue: unitValue * b.count
     });
   }
@@ -79,14 +97,14 @@ export function getInventoryAggregate(registry) {
   return out;
 }
 
-export function sellSpecies(registry, speciesId, rainbow = false, count = Infinity) {
+export function sellSpecies(registry, speciesId, variant = null, count = Infinity) {
   const inv = registry.get('inventory') || [];
   let remaining = count;
   const kept = [];
   let value = 0;
   let sold = 0;
   for (const e of inv) {
-    if (e.speciesId === speciesId && !!e.rainbow === !!rainbow && remaining > 0) {
+    if (e.speciesId === speciesId && (e.variant || null) === (variant || null) && remaining > 0) {
       value += _entryValue(e);
       sold++;
       remaining--;
@@ -114,7 +132,7 @@ export function findRareInInventory(registry) {
   const inv = registry.get('inventory') || [];
   for (const e of inv) {
     if (FISH[e.speciesId]?.rarity === 'rare') {
-      return { ...FISH[e.speciesId], rainbow: e.rainbow };
+      return { ...FISH[e.speciesId], variant: e.variant };
     }
   }
   return null;
@@ -137,7 +155,7 @@ export function deliverRareToRiverNpc(registry) {
   registry.set('inventory', next);
   addGold(registry, RIVER_NPC_REWARD);
   registry.set('riverNpcDeliveries', getRiverNpcDeliveries(registry) + 1);
-  return { species: FISH[entry.speciesId], rainbow: entry.rainbow, reward: RIVER_NPC_REWARD };
+  return { species: FISH[entry.speciesId], variant: entry.variant, reward: RIVER_NPC_REWARD };
 }
 
 // --- Quests --------------------------------------------------------------

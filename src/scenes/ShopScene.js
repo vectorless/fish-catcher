@@ -12,7 +12,7 @@ import { RARITY_COLOR } from '../data/fish.js';
 import {
   buyOrEquipRod, buyOrEquipBait, buyOrEquipTank,
   buyOrEquipFin, buyOrEquipGlove,
-  getInventoryAggregate, sellSpecies, sellAll
+  getInventoryAggregate, sellSpecies, sellAll, VARIANT_DISPLAY
 } from '../state.js';
 
 const CARD_W = 210;
@@ -167,15 +167,16 @@ export class ShopScene extends Phaser.Scene {
     this.scrollContainer.add(sellAllBtn);
     y += rowH + gap + 4;
 
-    // One row per (species, rainbow) bucket
+    // One row per (species, variant) bucket
     for (const r of rows) {
-      const color = r.rainbow ? '#ff66ff' : (RARITY_COLOR[r.species.rarity] || '#f4e4bc');
-      const namePrefix = r.rainbow ? 'Rainbow ' : '';
+      const variantStyle = r.variant ? VARIANT_DISPLAY[r.variant] : null;
+      const color = variantStyle ? variantStyle.color : (RARITY_COLOR[r.species.rarity] || '#f4e4bc');
+      const namePrefix = variantStyle ? variantStyle.prefix : '';
       const label = `${namePrefix}${r.species.name}  ×${r.count}  →  ${r.totalValue}g`;
-      const fill = r.rainbow ? 0x3a1a3a : 0x223445;
+      const fill = r.variant === 'shiny' ? 0x3a3a14 : r.variant === 'rainbow' ? 0x3a1a3a : 0x223445;
       const rowC = this._sellRow(width / 2, y, rowW, rowH, label,
         fill, Phaser.Display.Color.HexStringToColor(color).color,
-        () => this._handleSellSpecies(r.speciesId, r.rainbow, r.species.name, r.totalValue));
+        () => this._handleSellSpecies(r.speciesId, r.variant, r.species.name, r.totalValue));
       this.scrollContainer.add(rowC);
       y += rowH + gap;
     }
@@ -210,11 +211,11 @@ export class ShopScene extends Phaser.Scene {
     this._refresh();
   }
 
-  _handleSellSpecies(speciesId, rainbow, name, expectedValue) {
-    const r = sellSpecies(this.registry, speciesId, rainbow);
+  _handleSellSpecies(speciesId, variant, name, expectedValue) {
+    const r = sellSpecies(this.registry, speciesId, variant);
     if (r.sold === 0) return;
     this.feedback.setColor('#ffe27a');
-    const prefix = rainbow ? 'Rainbow ' : '';
+    const prefix = variant ? VARIANT_DISPLAY[variant].prefix : '';
     this.feedback.setText(`Sold ${r.sold}× ${prefix}${name} for ${r.value}g.`);
     this.feedback.setAlpha(1);
     this.tweens.killTweensOf(this.feedback);

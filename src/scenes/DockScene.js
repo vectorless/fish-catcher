@@ -15,7 +15,8 @@ import { FishingController } from '../controllers/FishingController.js';
 import {
   getCurrentZone, getFishPoolForZone, getEquippedTank, getEquippedFin,
   getEquippedGlove, recordCatch, addToInventory, addGold, redeemCode,
-  getSecretForZone, isSecretFound, findSecret
+  getSecretForZone, isSecretFound, findSecret,
+  rollCatchVariant, VARIANT_MULT
 } from '../state.js';
 
 const PLAYER_SPEED = 180;
@@ -622,14 +623,14 @@ export class DockScene extends Phaser.Scene {
     if (!species) return;
 
     const { isNew } = recordCatch(this.registry, species.id);
-    const rainbow = Math.random() < 0.10;
-    addToInventory(this.registry, species.id, { rainbow });
+    const variant = rollCatchVariant();
+    addToInventory(this.registry, species.id, { variant });
     const catchBonus = 5;
     const newlyUnlocked = addGold(this.registry, catchBonus);
     this.registry.set('lastCatchToast', {
       speciesId: species.id, name: species.name,
-      value: rainbow ? species.value * 2 : species.value,
-      isNew, perfect: false, catchBonus, rainbow, newlyUnlocked
+      value: species.value * (VARIANT_MULT[variant] || 1),
+      isNew, perfect: false, catchBonus, variant, newlyUnlocked
     });
 
     // Hide the sprite, schedule respawn elsewhere in the swim area.

@@ -2,7 +2,7 @@
 // Listens to registry change events to keep readouts in sync.
 
 import Phaser from 'phaser';
-import { getCurrentZone, getEquippedRod, getEquippedBait } from '../state.js';
+import { getCurrentZone, getEquippedRod, getEquippedBait, VARIANT_DISPLAY } from '../state.js';
 import { ZONES } from '../data/zones.js';
 import { FISH, RARITY_COLOR } from '../data/fish.js';
 
@@ -103,10 +103,11 @@ export class HUDScene extends Phaser.Scene {
       this.toastText.setText(t.reason || 'Got away…');
     } else {
       const fish = FISH[t.speciesId];
-      const color = t.rainbow ? '#ff66ff' : (RARITY_COLOR[fish?.rarity] || '#f4e4bc');
+      const variantStyle = t.variant ? VARIANT_DISPLAY[t.variant] : null;
+      const color = variantStyle ? variantStyle.color : (RARITY_COLOR[fish?.rarity] || '#f4e4bc');
       this.toastText.setColor(color);
       const tags = [];
-      if (t.rainbow) tags.push('RAINBOW');
+      if (t.variant) tags.push(t.variant.toUpperCase());
       if (t.perfect) tags.push('PERFECT');
       if (t.isNew) tags.push('NEW');
       const tagStr = tags.length ? `  [${tags.join(' · ')}]` : '';
@@ -114,7 +115,7 @@ export class HUDScene extends Phaser.Scene {
       if (t.catchBonus) bonusParts.push(`+${t.catchBonus}g`);
       if (t.perfectBonus) bonusParts.push(`+${t.perfectBonus}g perfect`);
       const bonusStr = bonusParts.length ? `  (${bonusParts.join(' ')})` : '';
-      const namePrefix = t.rainbow ? 'Rainbow ' : '';
+      const namePrefix = variantStyle ? variantStyle.prefix : '';
       this.toastText.setText(`Caught ${namePrefix}${t.name} — sells for ${t.value}g${bonusStr}${tagStr}`);
     }
     this.toastText.setAlpha(1);
