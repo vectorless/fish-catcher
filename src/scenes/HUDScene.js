@@ -109,8 +109,11 @@ export class HUDScene extends Phaser.Scene {
       if (t.perfect) tags.push('PERFECT');
       if (t.isNew) tags.push('NEW');
       const tagStr = tags.length ? `  [${tags.join(' · ')}]` : '';
-      const bonus = t.perfectBonus ? `  +${t.perfectBonus}g bonus` : '';
-      this.toastText.setText(`Caught ${t.name} — sells for ${t.value}g${bonus}${tagStr}`);
+      const bonusParts = [];
+      if (t.catchBonus) bonusParts.push(`+${t.catchBonus}g`);
+      if (t.perfectBonus) bonusParts.push(`+${t.perfectBonus}g perfect`);
+      const bonusStr = bonusParts.length ? `  (${bonusParts.join(' ')})` : '';
+      this.toastText.setText(`Caught ${t.name} — sells for ${t.value}g${bonusStr}${tagStr}`);
     }
     this.toastText.setAlpha(1);
     this.toastText.setVisible(true);

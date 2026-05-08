@@ -235,19 +235,18 @@ export class FishingController extends Phaser.Events.EventEmitter {
     const species = this.species;
     const sellValue = species.value;
     const perfectBonus = perfect ? Math.max(1, Math.floor(sellValue * 0.5)) : 0;
+    const catchBonus = 5;
     const { isNew } = recordCatch(this.scene.registry, species.id);
     addToInventory(this.scene.registry, species.id);
-    // Perfect bonus is paid immediately as gold; the fish itself is sold
-    // later at the shop for its base value.
-    const newlyUnlocked = perfectBonus > 0
-      ? addGold(this.scene.registry, perfectBonus)
-      : [];
+    // Tip jar: a flat catch bonus + the perfect bonus are paid as immediate
+    // gold. The fish itself sits in inventory until sold for its base value.
+    const newlyUnlocked = addGold(this.scene.registry, catchBonus + perfectBonus);
 
     this.scene.registry.set('lastCatchToast', {
       speciesId: species.id, name: species.name, value: sellValue,
-      isNew, perfect, perfectBonus, newlyUnlocked
+      isNew, perfect, perfectBonus, catchBonus, newlyUnlocked
     });
-    this.emit('fish:caught', { species, value: sellValue, isNew, perfect, perfectBonus, newlyUnlocked });
+    this.emit('fish:caught', { species, value: sellValue, isNew, perfect, perfectBonus, catchBonus, newlyUnlocked });
 
     this.scene.tweens.add({
       targets: this.bobber, y: this.bobber.y - 16,
