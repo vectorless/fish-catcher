@@ -14,7 +14,8 @@ import Phaser from 'phaser';
 import { FishingController } from '../controllers/FishingController.js';
 import {
   getCurrentZone, getFishPoolForZone, getEquippedTank, getEquippedFin,
-  getEquippedGlove, recordCatch, addGold, redeemCode
+  getEquippedGlove, recordCatch, addGold, redeemCode,
+  getSecretForZone, isSecretFound, findSecret
 } from '../state.js';
 
 const PLAYER_SPEED = 180;
@@ -25,6 +26,8 @@ const PIER_EDGE_DIVE_RANGE = 60;  // must be within this many px of pier edge to
 const SWIM_SPEED = 110;           // diver px/sec — water is heavy
 const FISH_CATCH_RADIUS = 24;     // distance threshold for grabbing a fish
 const FISH_RESPAWN_MS = 5000;     // caught fish reappear after this delay
+const QUEST_BOX_INTERACT_RANGE = 50;
+const SECRET_FIND_RADIUS = 26;
 
 export class DockScene extends Phaser.Scene {
   constructor() {
@@ -65,6 +68,7 @@ export class DockScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-T', () => this._tryOpen('TutorialScene'));
     this.input.keyboard.on('keydown-S', () => this._toggleDive());
     this.input.keyboard.on('keydown-R', () => this._promptRedeem());
+    this.input.keyboard.on('keydown-Q', () => this._tryQuestBox());
 
     // First-launch tutorial
     if (!this.registry.get('tutorialSeen')) {
@@ -91,6 +95,18 @@ export class DockScene extends Phaser.Scene {
   _flashPrompt(text, duration) {
     const hud = this.scene.get('HUDScene');
     if (hud && hud.flashPrompt) hud.flashPrompt(text, duration);
+  }
+
+  _tryQuestBox() {
+    if (this.mode === 'dive') { this._flashPrompt('Surface first.'); return; }
+    if (!this.controller || !this.controller.isIdle()) { this._flashPrompt('Reel in first.'); return; }
+    if (!this.player || !this.questBox) return;
+    if (Math.abs(this.player.x - this.questBox.x) > QUEST_BOX_INTERACT_RANGE) {
+      this._flashPrompt('Walk to the chest on the pier.');
+      return;
+    }
+    this.scene.launch('QuestScene');
+    this.scene.pause();
   }
 
   _promptRedeem() {
@@ -207,10 +223,34 @@ export class DockScene extends Phaser.Scene {
       fontFamily: 'serif', fontSize: '13px', color: '#cbb98a', fontStyle: 'italic'
     }).setOrigin(1, 0).setDepth(50);
 
+    // --- Quest box on the pier ---
+    const questBoxX = Math.min(96, pierRightX - 80);
+    const questBoxY = pierTopY;
+    this.questBox = {
+      x: questBoxX, y: questBoxY,
+      sprite: this.add.rectangle(questBoxX, questBoxY - 12, 28, 24, 0x6e4a2a)
+        .setOrigin(0.5, 1).setStrokeStyle(2, 0x3a2a14).setDepth(7),
+      lid: this.add.rectangle(questBoxX, questBoxY - 24, 30, 4, 0x4a3a1e)
+        .setOrigin(0.5, 1).setStrokeStyle(2, 0x2a1a0e).setDepth(7),
+      label: this.add.text(questBoxX, questBoxY - 38, '?', {
+        fontFamily: 'serif', fontSize: '18px', color: '#ffd24a',
+        fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+      }).setOrigin(0.5).setDepth(7),
+      prompt: this.add.text(questBoxX, questBoxY - 52, 'Q', {
+        fontFamily: 'serif', fontSize: '13px', color: '#f4e4bc',
+        backgroundColor: '#000a', padding: { x: 6, y: 2 }
+      }).setOrigin(0.5).setDepth(8).setVisible(false)
+    };
+
+    // --- Secret chest in this zone (if not already found) ---
+    this._buildSecretChest(zone, swimL, swimR, swimTop, swimBottom);
+
     this.uiRoot.add([
       sky, water, deep, pier, ...planks, piling,
-      body, head, rod, this.diver, title, blurb
+      body, head, rod, this.diver, title, blurb,
+      this.questBox.sprite, this.questBox.lid, this.questBox.label, this.questBox.prompt
     ]);
+    if (this.secretChest) this.uiRoot.add(this.secretChest);
 
     // --- Controller ---
     this.controller = new FishingController(this, {
@@ -225,6 +265,30 @@ export class DockScene extends Phaser.Scene {
 
   _canCastHere() {
     return this.rodTip.x + 200 > this.pierRightX + PIER_EDGE_MARGIN;
+  }
+
+  _buildSecretChest(zone, swimL, swimR, swimTop, swimBottom) {
+    this.secretChest = null;
+    this.secretInfo = null;
+    const secret = getSecretForZone(zone.id);
+    if (!secret) return;
+    if (isSecretFound(this.registry, secret.id)) return;
+    const x = swimL + secret.x * (swimR - swimL);
+    const y = swimTop + secret.y * (swimBottom - swimTop);
+    const c = this.add.container(x, y).setDepth(4);
+    const box = this.add.rectangle(0, 0, 18, 14, 0x6e4a2a)
+      .setStrokeStyle(1, 0xffd24a, 0.7);
+    const lid = this.add.rectangle(0, -8, 20, 4, 0x4a3a1e)
+      .setStrokeStyle(1, 0xffd24a, 0.5);
+    const glint = this.add.circle(0, 0, 1.5, 0xffd24a, 0.6);
+    c.add([box, lid, glint]);
+    // Subtle pulse so attentive divers can spot it
+    this.tweens.add({
+      targets: glint, alpha: { from: 0.3, to: 0.9 },
+      duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.InOut'
+    });
+    this.secretChest = c;
+    this.secretInfo = { ...secret, x, y };
   }
 
   _makeDiver() {
@@ -357,15 +421,21 @@ export class DockScene extends Phaser.Scene {
     let dx = 0;
     if (this.keys.left.isDown || this.keys.leftArrow.isDown) dx -= 1;
     if (this.keys.right.isDown || this.keys.rightArrow.isDown) dx += 1;
-    if (dx === 0) return;
+    if (dx !== 0) {
+      const next = Phaser.Math.Clamp(
+        this.player.x + dx * PLAYER_SPEED * dt,
+        this.player.xMin, this.player.xMax
+      );
+      if (next !== this.player.x) {
+        this.player.x = next;
+        this._syncPlayerVisuals();
+      }
+    }
 
-    const next = Phaser.Math.Clamp(
-      this.player.x + dx * PLAYER_SPEED * dt,
-      this.player.xMin, this.player.xMax
-    );
-    if (next !== this.player.x) {
-      this.player.x = next;
-      this._syncPlayerVisuals();
+    // Show "Q" prompt when standing close to the quest box.
+    if (this.questBox) {
+      const close = Math.abs(this.player.x - this.questBox.x) <= QUEST_BOX_INTERACT_RANGE;
+      this.questBox.prompt.setVisible(close);
     }
   }
 
@@ -395,6 +465,15 @@ export class DockScene extends Phaser.Scene {
       if (dx !== 0) this.diver.setScale(dx > 0 ? 1 : -1, 1);
     }
 
+    // Secret chest collision (must check before fish loop)
+    if (this.secretChest && this.secretInfo) {
+      const d = Phaser.Math.Distance.Between(
+        this.diver.x, this.diver.y,
+        this.secretInfo.x, this.secretInfo.y
+      );
+      if (d < SECRET_FIND_RADIUS) this._collectSecret();
+    }
+
     // Touch fish to catch — but rares are too slippery to grab by hand.
     // You can see them swimming, you just can't catch them this way.
     for (const f of this.fishSprites) {
@@ -413,6 +492,32 @@ export class DockScene extends Phaser.Scene {
       }
       this._grabFish(f);
     }
+  }
+
+  _collectSecret() {
+    const info = this.secretInfo;
+    if (!info) return;
+    const claimed = findSecret(this.registry, info.id);
+    if (!claimed) return;
+    this._flashPrompt(`Secret! ${info.name} (+${info.gold}g)`, 3500);
+    // Sparkle burst at chest position
+    for (let i = 0; i < 10; i++) {
+      const s = this.add.circle(info.x, info.y, 2 + Math.random() * 2, 0xffd24a)
+        .setDepth(40);
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 30 + Math.random() * 30;
+      this.tweens.add({
+        targets: s,
+        x: info.x + Math.cos(ang) * dist,
+        y: info.y + Math.sin(ang) * dist,
+        alpha: { from: 1, to: 0 },
+        duration: 700,
+        onComplete: () => s.destroy()
+      });
+    }
+    this.secretChest.destroy();
+    this.secretChest = null;
+    this.secretInfo = null;
   }
 
   _grabFish(fishSprite) {

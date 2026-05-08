@@ -31,7 +31,15 @@ const SECTIONS = [
       'F — Fishdex (your collection)',
       'Z — Zone select. New zones unlock by total gold earned.',
       'R — redeem codes',
-      'Earn 200g for River, 800g for Ocean, 2500g for Reef, 6000g for the Abyss'
+      'Earn 200g (River), 800g (Ocean), 2500g (Reef), 6000g (Abyss), 15000g (Leviathan Zone)'
+    ]
+  },
+  {
+    title: 'Quests & secrets',
+    lines: [
+      'A weathered chest sits on the pier. Walk up to it and press Q to take a job.',
+      'Catch the right fish or earn enough gold to claim the reward.',
+      'Each zone hides a secret cache somewhere underwater — keep an eye out while diving.'
     ]
   }
 ];

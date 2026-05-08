@@ -4,6 +4,7 @@ import { ShopScene } from './scenes/ShopScene.js';
 import { FishdexScene } from './scenes/FishdexScene.js';
 import { ZoneSelectScene } from './scenes/ZoneSelectScene.js';
 import { TutorialScene } from './scenes/TutorialScene.js';
+import { QuestScene } from './scenes/QuestScene.js';
 import { HUDScene } from './scenes/HUDScene.js';
 import { initState } from './state.js';
 
@@ -16,7 +17,7 @@ const game = new Phaser.Game({
     width: '100%',
     height: '100%'
   },
-  scene: [DockScene, ShopScene, FishdexScene, ZoneSelectScene, TutorialScene, HUDScene]
+  scene: [DockScene, ShopScene, FishdexScene, ZoneSelectScene, TutorialScene, QuestScene, HUDScene]
 });
 
 initState(game.registry);

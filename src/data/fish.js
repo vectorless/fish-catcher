@@ -263,6 +263,38 @@ export const FISH = {
     id: 'abyssal_dragon', name: 'Abyssal Dragon', zoneIds: ['abyss'],
     rarity: 'legendary', value: 25000,
     body: { w: 160, h: 22, color: 0x1a0a2e, accent: 0xff5a3a }
+  },
+
+  // --- The Leviathan Zone -------------------------------------------------
+  nautilus: {
+    id: 'nautilus', name: 'Chambered Nautilus', zoneIds: ['leviathan'],
+    rarity: 'common', value: 200,
+    body: { w: 28, h: 24, color: 0xc8a85a, accent: 0xfff15a }
+  },
+  giant_jellyfish: {
+    id: 'giant_jellyfish', name: 'Giant Jellyfish', zoneIds: ['leviathan'],
+    rarity: 'uncommon', value: 500,
+    body: { w: 44, h: 40, color: 0xc466ff, accent: 0xfff15a }
+  },
+  siren: {
+    id: 'siren', name: 'Siren', zoneIds: ['leviathan'],
+    rarity: 'rare', value: 1500,
+    body: { w: 36, h: 22, color: 0x4a8a8a, accent: 0xc8d27e }
+  },
+  aspidochelone: {
+    id: 'aspidochelone', name: 'Aspidochelone', zoneIds: ['leviathan'],
+    rarity: 'epic', value: 9000,
+    body: { w: 120, h: 40, color: 0x4a3a1e, accent: 0x6e5a3a }
+  },
+  jormungandr: {
+    id: 'jormungandr', name: 'Jörmungandr', zoneIds: ['leviathan'],
+    rarity: 'legendary', value: 30000,
+    body: { w: 180, h: 18, color: 0x2e4a3a, accent: 0x6ec97a }
+  },
+  bahamut: {
+    id: 'bahamut', name: 'Bahamut', zoneIds: ['leviathan'],
+    rarity: 'legendary', value: 50000,
+    body: { w: 200, h: 32, color: 0xffd24a, accent: 0xff5a3a }
   }
 };
 
@@ -276,7 +308,8 @@ export const FISH_ORDER = [
   'clownfish', 'angelfish', 'lionfish', 'manta_ray', 'octopus', 'sea_turtle',
   'damselfish', 'moray', 'reef_shark', 'leviathan',
   'lanternfish', 'gulper_eel', 'viperfish', 'anglerfish', 'giant_squid', 'megalodon',
-  'isopod', 'vampire_squid', 'coelacanth', 'abyssal_dragon'
+  'isopod', 'vampire_squid', 'coelacanth', 'abyssal_dragon',
+  'nautilus', 'giant_jellyfish', 'siren', 'aspidochelone', 'jormungandr', 'bahamut'
 ];
 
 export function getFishByZone(zoneId) {

@@ -56,7 +56,17 @@ export const ZONES = {
                'isopod', 'vampire_squid', 'coelacanth', 'abyssal_dragon'],
     luckBias: { common: 0.6, uncommon: 1.0, rare: 1.7, epic: 1.4, legendary: 1.6 },
     blurb: 'Sunless dark. Where leviathans hunt.'
+  },
+  leviathan: {
+    id: 'leviathan', name: 'The Leviathan Zone',
+    unlockGoldThreshold: 15000,
+    waterColor: 0x1a0a2e,
+    waterDeep: 0x0a0214,
+    skyColor: 0x2a1a4a,
+    fishPool: ['nautilus', 'giant_jellyfish', 'siren', 'aspidochelone', 'jormungandr', 'bahamut'],
+    luckBias: { common: 0.4, uncommon: 0.8, rare: 1.5, epic: 2.0, legendary: 2.5 },
+    blurb: 'Where ancient gods of the deep still hunt.'
   }
 };
 
-export const ZONE_ORDER = ['pond', 'river', 'ocean', 'reef', 'abyss'];
+export const ZONE_ORDER = ['pond', 'river', 'ocean', 'reef', 'abyss', 'leviathan'];

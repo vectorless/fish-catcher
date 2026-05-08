@@ -8,6 +8,8 @@ import { TANKS } from './data/tanks.js';
 import { FINS } from './data/fins.js';
 import { GLOVES } from './data/gloves.js';
 import { CODES } from './data/codes.js';
+import { assignRandomQuest } from './data/quests.js';
+import { SECRETS } from './data/secrets.js';
 import { ZONES, ZONE_ORDER } from './data/zones.js';
 import { FISH, getFishByZone, RARITY_WEIGHT } from './data/fish.js';
 
@@ -30,6 +32,61 @@ export function initState(registry) {
   registry.set('castState', 'idle');
   registry.set('lastCatchToast', null);
   registry.set('redeemedCodes', []);
+  registry.set('activeQuest', null);
+  registry.set('foundSecrets', []);
+}
+
+// --- Quests --------------------------------------------------------------
+
+export function getActiveQuest(registry) {
+  return registry.get('activeQuest');
+}
+
+export function startNewQuest(registry) {
+  const q = assignRandomQuest();
+  registry.set('activeQuest', q);
+  return q;
+}
+
+export function claimQuest(registry) {
+  const q = registry.get('activeQuest');
+  if (!q || !q.complete) return null;
+  if (q.reward) addGold(registry, q.reward);
+  registry.set('activeQuest', null);
+  return q;
+}
+
+// Called from recordCatch / addGold to advance progress on the active quest.
+function _advanceQuest(registry, advance) {
+  const q = registry.get('activeQuest');
+  if (!q || q.complete) return;
+  const next = advance(q);
+  if (!next) return;
+  if (next.progress >= next.goal) next.complete = true;
+  // Replace the registry value so changedata fires (objects mutate in place
+  // otherwise and listeners wouldn't notice).
+  registry.set('activeQuest', { ...next });
+}
+
+// --- Secrets -------------------------------------------------------------
+
+export function getSecretForZone(zoneId) {
+  return SECRETS[zoneId] || null;
+}
+
+export function isSecretFound(registry, secretId) {
+  const found = registry.get('foundSecrets') || [];
+  return found.includes(secretId);
+}
+
+export function findSecret(registry, secretId) {
+  const secret = Object.values(SECRETS).find(s => s.id === secretId);
+  if (!secret) return null;
+  if (isSecretFound(registry, secretId)) return null;
+  const found = registry.get('foundSecrets') || [];
+  registry.set('foundSecrets', [...found, secretId]);
+  if (secret.gold) addGold(registry, secret.gold);
+  return secret;
 }
 
 // --- Code redemption -----------------------------------------------------
@@ -53,6 +110,11 @@ export function addGold(registry, amount) {
   const total = registry.get('goldEarnedTotal') || 0;
   registry.set('gold', g + amount);
   registry.set('goldEarnedTotal', total + amount);
+  // Advance earn_gold quest if active.
+  _advanceQuest(registry, q => {
+    if (q.type !== 'earn_gold' || amount <= 0) return null;
+    return { ...q, progress: Math.min(q.goal, q.progress + amount) };
+  });
   return checkAndUnlockZones(registry);
 }
 
@@ -187,9 +249,22 @@ export function hasCaught(registry, speciesId) {
 
 export function recordCatch(registry, speciesId) {
   const dex = registry.get('fishdex') || [];
-  if (dex.includes(speciesId)) return { isNew: false };
-  registry.set('fishdex', [...dex, speciesId]);
-  return { isNew: true };
+  const isNew = !dex.includes(speciesId);
+  if (isNew) registry.set('fishdex', [...dex, speciesId]);
+  // Advance any matching quest types.
+  _advanceQuest(registry, q => {
+    if (q.type === 'catch_species' && q.speciesId === speciesId) {
+      return { ...q, progress: q.progress + 1 };
+    }
+    if (q.type === 'catch_rarity') {
+      const fish = FISH[speciesId];
+      if (fish && fish.rarity === q.rarity) {
+        return { ...q, progress: q.progress + 1 };
+      }
+    }
+    return null;
+  });
+  return { isNew };
 }
 
 // --- Zones ---------------------------------------------------------------

@@ -26,7 +26,7 @@ export class HUDScene extends Phaser.Scene {
       fontFamily: 'serif', fontSize: '13px', color: '#a8b6c4'
     }).setScrollFactor(0).setDepth(1000).setOrigin(1, 0);
 
-    this.helpText = this.add.text(20, 0, 'A/D walk · SPACE cast/hook · S dive · W/SPACE ascend/descend · E shop · F fishdex · Z zones · R redeem · T tutorial', {
+    this.helpText = this.add.text(20, 0, 'A/D walk · SPACE cast/hook · S dive · W/SPACE ascend/descend · E shop · F fishdex · Z zones · Q quest · R redeem · T tutorial', {
       fontFamily: 'serif', fontSize: '12px', color: '#7a8a9a'
     }).setScrollFactor(0).setDepth(1000).setOrigin(0, 1);
 
