@@ -14,7 +14,7 @@ import Phaser from 'phaser';
 import { FishingController } from '../controllers/FishingController.js';
 import {
   getCurrentZone, getFishPoolForZone, getEquippedTank, getEquippedFin,
-  getEquippedGlove, recordCatch, addGold, redeemCode,
+  getEquippedGlove, recordCatch, addToInventory, redeemCode,
   getSecretForZone, isSecretFound, findSecret
 } from '../state.js';
 
@@ -28,6 +28,11 @@ const FISH_CATCH_RADIUS = 24;     // distance threshold for grabbing a fish
 const FISH_RESPAWN_MS = 5000;     // caught fish reappear after this delay
 const QUEST_BOX_INTERACT_RANGE = 50;
 const SECRET_FIND_RADIUS = 26;
+const NPC_INTERACT_RANGE = 50;
+const SHOP_INTERACT_RANGE = 60;
+const SAND_COLOR = 0xe8c890;
+const SAND_DARK = 0xc8a870;
+const SAND_GRAIN = 0xb89860;
 
 export class DockScene extends Phaser.Scene {
   constructor() {
@@ -100,13 +105,21 @@ export class DockScene extends Phaser.Scene {
   _tryQuestBox() {
     if (this.mode === 'dive') { this._flashPrompt('Surface first.'); return; }
     if (!this.controller || !this.controller.isIdle()) { this._flashPrompt('Reel in first.'); return; }
-    if (!this.player || !this.questBox) return;
-    if (Math.abs(this.player.x - this.questBox.x) > QUEST_BOX_INTERACT_RANGE) {
-      this._flashPrompt('Walk to the chest on the pier.');
+    if (!this.player) return;
+
+    // The river NPC takes precedence when both are in range — they're the
+    // only zone-specific Q-target, so we'd rather not lose them to the box.
+    if (this.riverNpc && Math.abs(this.player.x - this.riverNpc.x) <= NPC_INTERACT_RANGE) {
+      this.scene.launch('NpcScene');
+      this.scene.pause();
       return;
     }
-    this.scene.launch('QuestScene');
-    this.scene.pause();
+    if (this.questBox && Math.abs(this.player.x - this.questBox.x) <= QUEST_BOX_INTERACT_RANGE) {
+      this.scene.launch('QuestScene');
+      this.scene.pause();
+      return;
+    }
+    this._flashPrompt('Walk up to the chest or NPC.');
   }
 
   _promptRedeem() {
@@ -155,16 +168,23 @@ export class DockScene extends Phaser.Scene {
       width, (height - waterlineY) * 0.45, zone.waterDeep)
       .setOrigin(0, 0).setAlpha(0.55).setDepth(2);
 
-    // --- Pier ---
-    const pier = this.add.rectangle(0, pierTopY, pierRightX, pierBottomY - pierTopY,
-      0x6a4a2a).setOrigin(0, 0).setStrokeStyle(2, 0x3a2a14).setDepth(5);
-    const planks = [];
-    for (let i = 1; i < 4; i++) {
-      planks.push(this.add.line(0, 0, 0, pierTopY + i * 12, pierRightX, pierTopY + i * 12,
-        0x4a3a1e, 0.6).setOrigin(0, 0).setDepth(5));
+    // --- Beach (sand) ---
+    const beach = this.add.rectangle(0, pierTopY, pierRightX, pierBottomY - pierTopY,
+      SAND_COLOR).setOrigin(0, 0).setStrokeStyle(2, SAND_DARK).setDepth(5);
+    // Subtle grain dots so it doesn't read as flat tan.
+    const grains = [];
+    const seed = (zone.id || '').length * 13 + 7;
+    for (let i = 0; i < 60; i++) {
+      const gx = ((seed * (i + 3)) % pierRightX);
+      const gy = pierTopY + ((seed * (i + 11)) % (pierBottomY - pierTopY - 4));
+      grains.push(this.add.circle(gx, gy, 1, SAND_GRAIN, 0.55).setDepth(5));
     }
-    const piling = this.add.rectangle(pierRightX - 6, pierTopY, 12, pierBottomY - pierTopY,
-      0x4a2e16).setOrigin(0, 0).setDepth(6);
+    // Wet-sand strip at the waterline (slightly darker)
+    const wetStrip = this.add.rectangle(0, pierTopY, pierRightX, 6, SAND_DARK)
+      .setOrigin(0, 0).setAlpha(0.6).setDepth(6);
+
+    // --- Shop building (left side, persistent on every zone) ---
+    this._buildShopBuilding(pierTopY);
 
     // --- Pier player ---
     const playerXMin = 24;
@@ -245,8 +265,11 @@ export class DockScene extends Phaser.Scene {
     // --- Secret chest in this zone (if not already found) ---
     this._buildSecretChest(zone, swimL, swimR, swimTop, swimBottom);
 
+    // --- River NPC (only spawned in the river zone) ---
+    this._buildRiverNpc(zone, pierTopY);
+
     this.uiRoot.add([
-      sky, water, deep, pier, ...planks, piling,
+      sky, water, deep, beach, ...grains, wetStrip,
       body, head, rod, this.diver, title, blurb,
       this.questBox.sprite, this.questBox.lid, this.questBox.label, this.questBox.prompt
     ]);
@@ -265,6 +288,70 @@ export class DockScene extends Phaser.Scene {
 
   _canCastHere() {
     return this.rodTip.x + 200 > this.pierRightX + PIER_EDGE_MARGIN;
+  }
+
+  _buildShopBuilding(beachTopY) {
+    // A small shack on the left side of the beach. The modal shop still
+    // opens via E from anywhere — this is the visible reminder that the
+    // shop exists and where it lives.
+    const baseX = 50;
+    const baseW = 64;
+    const baseH = 48;
+    const baseY = beachTopY;
+    const wall = this.add.rectangle(baseX, baseY, baseW, baseH, 0x8a5a3a)
+      .setOrigin(0.5, 1).setStrokeStyle(2, 0x4a2e1a).setDepth(7);
+    // Roof: triangle just above the wall top.
+    const roof = this.add.triangle(baseX, baseY - baseH,
+      -baseW / 2 - 6, 0,
+      baseW / 2 + 6, 0,
+      0, -22,
+      0xa84a3a).setStrokeStyle(2, 0x4a2e1a).setDepth(7);
+    // Door
+    const door = this.add.rectangle(baseX, baseY, 16, 26, 0x4a2e1a)
+      .setOrigin(0.5, 1).setStrokeStyle(2, 0x2a1a0a).setDepth(7);
+    // Window
+    const window = this.add.rectangle(baseX - 18, baseY - baseH + 16, 12, 12, 0xc8d2da)
+      .setStrokeStyle(2, 0x4a2e1a).setDepth(7);
+    // SHOP sign
+    const sign = this.add.text(baseX, baseY - baseH - 28, 'SHOP', {
+      fontFamily: 'serif', fontSize: '14px', fontStyle: 'bold',
+      color: '#f4e4bc', stroke: '#000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(8);
+    // "E" prompt that appears when the player is close
+    const prompt = this.add.text(baseX, baseY - baseH - 46, 'E', {
+      fontFamily: 'serif', fontSize: '13px', color: '#ffd24a',
+      backgroundColor: '#000a', padding: { x: 6, y: 2 }
+    }).setOrigin(0.5).setDepth(8).setVisible(false);
+
+    this.uiRoot.add([wall, roof, door, window, sign, prompt]);
+    this.shopBuilding = { x: baseX, prompt };
+  }
+
+  _buildRiverNpc(zone, beachTopY) {
+    this.riverNpc = null;
+    if (zone.id !== 'river') return;
+    const pierRightX = this.pierRightX;
+    const x = Math.min(pierRightX - 30, 220);
+    const feetY = beachTopY;
+    const body = this.add.rectangle(x, feetY, 14, 24, 0x9c4a3a)
+      .setOrigin(0.5, 1).setStrokeStyle(2, 0x4a2e1a).setDepth(8);
+    const head = this.add.circle(x, feetY - 32, 8, 0xf2c89a)
+      .setStrokeStyle(2, 0x4a2e1a).setDepth(9);
+    // Straw hat
+    const hatBrim = this.add.rectangle(x, feetY - 39, 22, 3, 0xc8a85a)
+      .setStrokeStyle(2, 0x6a4a2a).setDepth(9);
+    const hatCrown = this.add.triangle(x, feetY - 41, -7, 4, 7, 4, 0, -7, 0xc8a85a)
+      .setStrokeStyle(2, 0x6a4a2a).setDepth(9);
+    const label = this.add.text(x, feetY - 58, '!', {
+      fontFamily: 'serif', fontSize: '18px', fontStyle: 'bold',
+      color: '#ffd24a', stroke: '#000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(9);
+    const prompt = this.add.text(x, feetY - 76, 'Q', {
+      fontFamily: 'serif', fontSize: '13px', color: '#f4e4bc',
+      backgroundColor: '#000a', padding: { x: 6, y: 2 }
+    }).setOrigin(0.5).setDepth(10).setVisible(false);
+    this.uiRoot.add([body, head, hatBrim, hatCrown, label, prompt]);
+    this.riverNpc = { x, feetY, prompt };
   }
 
   _buildSecretChest(zone, swimL, swimR, swimTop, swimBottom) {
@@ -437,6 +524,16 @@ export class DockScene extends Phaser.Scene {
       const close = Math.abs(this.player.x - this.questBox.x) <= QUEST_BOX_INTERACT_RANGE;
       this.questBox.prompt.setVisible(close);
     }
+    // "E" prompt when close to the shop building.
+    if (this.shopBuilding) {
+      const close = Math.abs(this.player.x - this.shopBuilding.x) <= SHOP_INTERACT_RANGE;
+      this.shopBuilding.prompt.setVisible(close);
+    }
+    // "Q" prompt over the river NPC when close.
+    if (this.riverNpc) {
+      const close = Math.abs(this.player.x - this.riverNpc.x) <= NPC_INTERACT_RANGE;
+      this.riverNpc.prompt.setVisible(close);
+    }
   }
 
   _updateDive(dt) {
@@ -525,10 +622,10 @@ export class DockScene extends Phaser.Scene {
     if (!species) return;
 
     const { isNew } = recordCatch(this.registry, species.id);
-    const newlyUnlocked = addGold(this.registry, species.value);
+    addToInventory(this.registry, species.id);
     this.registry.set('lastCatchToast', {
       speciesId: species.id, name: species.name, value: species.value,
-      isNew, perfect: false, newlyUnlocked
+      isNew, perfect: false, newlyUnlocked: []
     });
 
     // Hide the sprite, schedule respawn elsewhere in the swim area.

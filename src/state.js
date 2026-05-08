@@ -34,6 +34,92 @@ export function initState(registry) {
   registry.set('redeemedCodes', []);
   registry.set('activeQuest', null);
   registry.set('foundSecrets', []);
+  registry.set('inventory', []);
+  registry.set('riverNpcDeliveries', 0);
+}
+
+// --- Inventory -----------------------------------------------------------
+// Catches go here as bare species ids (duplicates count toward stack count).
+// Selling at the shop converts them to gold; the perfect-catch bonus is
+// awarded immediately at catch time as direct gold so it doesn't rot in
+// inventory.
+
+export function addToInventory(registry, speciesId) {
+  const inv = registry.get('inventory') || [];
+  registry.set('inventory', [...inv, speciesId]);
+}
+
+export function getInventoryAggregate(registry) {
+  const inv = registry.get('inventory') || [];
+  const counts = new Map();
+  for (const id of inv) counts.set(id, (counts.get(id) || 0) + 1);
+  const out = [];
+  for (const [id, count] of counts) {
+    const fish = FISH[id];
+    if (!fish) continue;
+    out.push({ speciesId: id, species: fish, count, totalValue: fish.value * count });
+  }
+  // Highest-value stack first so trophies are easy to spot.
+  out.sort((a, b) => b.totalValue - a.totalValue);
+  return out;
+}
+
+export function sellSpecies(registry, speciesId, count = Infinity) {
+  const inv = registry.get('inventory') || [];
+  let remaining = count;
+  const kept = [];
+  let sold = 0;
+  for (const id of inv) {
+    if (id === speciesId && remaining > 0) {
+      sold++;
+      remaining--;
+    } else {
+      kept.push(id);
+    }
+  }
+  if (sold === 0) return { sold: 0, value: 0 };
+  registry.set('inventory', kept);
+  const value = (FISH[speciesId]?.value || 0) * sold;
+  if (value > 0) addGold(registry, value);
+  return { sold, value };
+}
+
+export function sellAll(registry) {
+  const inv = registry.get('inventory') || [];
+  if (inv.length === 0) return { sold: 0, value: 0 };
+  let total = 0;
+  for (const id of inv) total += FISH[id]?.value || 0;
+  registry.set('inventory', []);
+  if (total > 0) addGold(registry, total);
+  return { sold: inv.length, value: total };
+}
+
+export function findRareInInventory(registry) {
+  const inv = registry.get('inventory') || [];
+  for (const id of inv) {
+    if (FISH[id]?.rarity === 'rare') return FISH[id];
+  }
+  return null;
+}
+
+// --- River NPC -----------------------------------------------------------
+
+const RIVER_NPC_REWARD = 800;
+
+export function getRiverNpcDeliveries(registry) {
+  return registry.get('riverNpcDeliveries') || 0;
+}
+
+export function deliverRareToRiverNpc(registry) {
+  const inv = registry.get('inventory') || [];
+  const idx = inv.findIndex(id => FISH[id]?.rarity === 'rare');
+  if (idx < 0) return null;
+  const speciesId = inv[idx];
+  const next = [...inv.slice(0, idx), ...inv.slice(idx + 1)];
+  registry.set('inventory', next);
+  addGold(registry, RIVER_NPC_REWARD);
+  registry.set('riverNpcDeliveries', getRiverNpcDeliveries(registry) + 1);
+  return { species: FISH[speciesId], reward: RIVER_NPC_REWARD };
 }
 
 // --- Quests --------------------------------------------------------------

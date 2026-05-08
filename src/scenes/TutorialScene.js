@@ -35,11 +35,12 @@ const SECTIONS = [
     ]
   },
   {
-    title: 'Quests & secrets',
+    title: 'Quests, NPCs & secrets',
     lines: [
-      'A weathered chest sits on the pier. Walk up to it and press Q to take a job.',
-      'Catch the right fish or earn enough gold to claim the reward.',
-      'Each zone hides a secret cache somewhere underwater — keep an eye out while diving.'
+      'Catches go into your bag — sell them in the SHOP for gold.',
+      'A weathered chest on the beach gives random quests (Q to talk).',
+      'In the River zone, an Old Fisher trades gold for any rare fish.',
+      'Each zone hides a secret cache somewhere underwater — find it while diving.'
     ]
   }
 ];

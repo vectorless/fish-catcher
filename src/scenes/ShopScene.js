@@ -8,9 +8,11 @@ import { BAITS, BAIT_ORDER } from '../data/baits.js';
 import { TANKS, TANK_ORDER } from '../data/tanks.js';
 import { FINS, FIN_ORDER } from '../data/fins.js';
 import { GLOVES, GLOVE_ORDER } from '../data/gloves.js';
+import { RARITY_COLOR } from '../data/fish.js';
 import {
   buyOrEquipRod, buyOrEquipBait, buyOrEquipTank,
-  buyOrEquipFin, buyOrEquipGlove
+  buyOrEquipFin, buyOrEquipGlove,
+  getInventoryAggregate, sellSpecies, sellAll
 } from '../state.js';
 
 const CARD_W = 210;
@@ -58,6 +60,7 @@ export class ShopScene extends Phaser.Scene {
     this.scrollContainer.setMask(this.scrollMask.createGeometryMask());
 
     this._sections = [
+      { kind: 'sell',  label: 'SELL CAUGHT FISH' },
       { kind: 'rod',   label: 'RODS',          order: ROD_ORDER,   data: RODS,   listKey: 'rodCards',   factory: this._makeRodCard,
         ownedKey: 'ownedRods',   equippedKey: 'equippedRodId',   defaults: ['twig'],     defaultId: 'twig' },
       { kind: 'bait',  label: 'BAIT',          order: BAIT_ORDER,  data: BAITS,  listKey: 'baitCards',  factory: this._makeBaitCard,
@@ -69,7 +72,10 @@ export class ShopScene extends Phaser.Scene {
       { kind: 'glove', label: 'GLOVES',        order: GLOVE_ORDER, data: GLOVES, listKey: 'gloveCards', factory: this._makeGloveCard,
         ownedKey: 'ownedGloves', equippedKey: 'equippedGloveId', defaults: ['bare'],     defaultId: 'bare' }
     ];
-    this._sections.forEach(s => { this[s.listKey] = []; this[`${s.kind}Header`] = null; });
+    this._sections.forEach(s => {
+      if (s.listKey) this[s.listKey] = [];
+      this[`${s.kind}Header`] = null;
+    });
 
     this._refresh();
 
@@ -110,24 +116,110 @@ export class ShopScene extends Phaser.Scene {
 
     // Rebuild content
     this.scrollContainer.removeAll(true);
-    this._sections.forEach(s => { this[s.listKey] = []; });
+    this._sections.forEach(s => { if (s.listKey) this[s.listKey] = []; });
 
     let y = 0;
     for (const sec of this._sections) {
       const header = this.add.text(width / 2, y, sec.label, {
-        fontFamily: 'serif', fontSize: '17px', color: '#cbb98a',
+        fontFamily: 'serif', fontSize: '17px',
+        color: sec.kind === 'sell' ? '#ffd24a' : '#cbb98a',
         fontStyle: 'bold'
       }).setOrigin(0.5, 0);
       this.scrollContainer.add(header);
 
-      const cardCenterY = y + 18 + HEADER_TO_CARD_GAP + CARD_H / 2;
-      this._buildSection(sec, cardCenterY);
-      y += SECTION_BLOCK;
+      if (sec.kind === 'sell') {
+        y = this._buildSellSection(y + 26);
+      } else {
+        const cardCenterY = y + 18 + HEADER_TO_CARD_GAP + CARD_H / 2;
+        this._buildSection(sec, cardCenterY);
+        y += SECTION_BLOCK;
+      }
     }
-    this._contentH = y - (SECTION_BLOCK - CARD_H - HEADER_TO_CARD_GAP - 18);
+    this._contentH = y;
 
     // Snap scroll to top on rebuild (stable across resize/refresh).
     this.scrollContainer.y = CONTENT_TOP_Y;
+  }
+
+  _buildSellSection(yStart) {
+    const { width } = this.scale;
+    const rows = getInventoryAggregate(this.registry);
+    const rowW = Math.min(560, width - 100);
+    const rowH = 30;
+    const gap = 6;
+    let y = yStart;
+
+    if (rows.length === 0) {
+      const empty = this.add.text(width / 2, y + 10,
+        'No fish on hand. Catch some, then come back to sell.', {
+        fontFamily: 'serif', fontSize: '13px', color: '#7a8a9a',
+        fontStyle: 'italic'
+      }).setOrigin(0.5, 0);
+      this.scrollContainer.add(empty);
+      return y + 38;
+    }
+
+    // Sell-all bar at the top of the section.
+    const totalAll = rows.reduce((s, r) => s + r.totalValue, 0);
+    const sellAllBtn = this._sellRow(width / 2, y, rowW, rowH,
+      `SELL ALL  →  ${totalAll}g`,
+      0x3b5a3b, 0xffd24a, () => this._handleSellAll());
+    this.scrollContainer.add(sellAllBtn);
+    y += rowH + gap + 4;
+
+    // One row per species
+    for (const r of rows) {
+      const color = RARITY_COLOR[r.species.rarity] || '#f4e4bc';
+      const label = `${r.species.name}  ×${r.count}  →  ${r.totalValue}g`;
+      const rowC = this._sellRow(width / 2, y, rowW, rowH, label,
+        0x223445, Phaser.Display.Color.HexStringToColor(color).color,
+        () => this._handleSellSpecies(r.speciesId, r.species.name, r.count, r.totalValue));
+      this.scrollContainer.add(rowC);
+      y += rowH + gap;
+    }
+
+    return y + 16;
+  }
+
+  _sellRow(centerX, y, w, h, label, fillColor, strokeColor, onClick) {
+    const c = this.add.container(centerX, y + h / 2);
+    const bg = this.add.rectangle(0, 0, w, h, fillColor)
+      .setStrokeStyle(2, strokeColor)
+      .setInteractive({ useHandCursor: true });
+    bg.on('pointerdown', onClick);
+    bg.on('pointerover', () => bg.setFillStyle(Phaser.Display.Color.IntegerToColor(fillColor).clone().brighten(15).color));
+    bg.on('pointerout', () => bg.setFillStyle(fillColor));
+    const text = this.add.text(0, 0, label, {
+      fontFamily: 'serif', fontSize: '14px', fontStyle: 'bold',
+      color: '#f4e4bc'
+    }).setOrigin(0.5);
+    c.add([bg, text]);
+    return c;
+  }
+
+  _handleSellAll() {
+    const r = sellAll(this.registry);
+    if (r.sold === 0) {
+      this._showFeedback({ ok: false, error: 'Nothing to sell.' });
+    } else {
+      this._showFeedback({ ok: true, equipped: false, bought: false }, `${r.sold} fish for ${r.value}g`);
+      this.feedback.setText(`Sold ${r.sold} fish for ${r.value}g.`);
+    }
+    this._refresh();
+  }
+
+  _handleSellSpecies(speciesId, name, count, value) {
+    const r = sellSpecies(this.registry, speciesId);
+    if (r.sold === 0) return;
+    this.feedback.setColor('#ffe27a');
+    this.feedback.setText(`Sold ${r.sold}× ${name} for ${r.value}g.`);
+    this.feedback.setAlpha(1);
+    this.tweens.killTweensOf(this.feedback);
+    this.tweens.add({
+      targets: this.feedback, alpha: { from: 1, to: 0 },
+      duration: 2200, hold: 700
+    });
+    this._refresh();
   }
 
   _buildSection(sec, cardCenterY) {

@@ -109,7 +109,8 @@ export class HUDScene extends Phaser.Scene {
       if (t.perfect) tags.push('PERFECT');
       if (t.isNew) tags.push('NEW');
       const tagStr = tags.length ? `  [${tags.join(' · ')}]` : '';
-      this.toastText.setText(`Caught ${t.name} (+${t.value}g)${tagStr}`);
+      const bonus = t.perfectBonus ? `  +${t.perfectBonus}g bonus` : '';
+      this.toastText.setText(`Caught ${t.name} — sells for ${t.value}g${bonus}${tagStr}`);
     }
     this.toastText.setAlpha(1);
     this.toastText.setVisible(true);

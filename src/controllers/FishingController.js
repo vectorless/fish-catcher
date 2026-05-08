@@ -20,7 +20,8 @@
 
 import Phaser from 'phaser';
 import {
-  getEquippedRod, getEquippedBait, addGold, recordCatch, rollSpecies
+  getEquippedRod, getEquippedBait, addGold, addToInventory,
+  recordCatch, rollSpecies
 } from '../state.js';
 
 const CAST_MS = 600;
@@ -232,14 +233,21 @@ export class FishingController extends Phaser.Events.EventEmitter {
     this._setState('resolving');
 
     const species = this.species;
-    const value = Math.max(1, Math.floor(species.value * (perfect ? 1.5 : 1)));
+    const sellValue = species.value;
+    const perfectBonus = perfect ? Math.max(1, Math.floor(sellValue * 0.5)) : 0;
     const { isNew } = recordCatch(this.scene.registry, species.id);
-    const newlyUnlocked = addGold(this.scene.registry, value);
+    addToInventory(this.scene.registry, species.id);
+    // Perfect bonus is paid immediately as gold; the fish itself is sold
+    // later at the shop for its base value.
+    const newlyUnlocked = perfectBonus > 0
+      ? addGold(this.scene.registry, perfectBonus)
+      : [];
 
     this.scene.registry.set('lastCatchToast', {
-      speciesId: species.id, name: species.name, value, isNew, perfect, newlyUnlocked
+      speciesId: species.id, name: species.name, value: sellValue,
+      isNew, perfect, perfectBonus, newlyUnlocked
     });
-    this.emit('fish:caught', { species, value, isNew, perfect, newlyUnlocked });
+    this.emit('fish:caught', { species, value: sellValue, isNew, perfect, perfectBonus, newlyUnlocked });
 
     this.scene.tweens.add({
       targets: this.bobber, y: this.bobber.y - 16,
