@@ -103,9 +103,10 @@ export class HUDScene extends Phaser.Scene {
       this.toastText.setText(t.reason || 'Got away…');
     } else {
       const fish = FISH[t.speciesId];
-      const color = RARITY_COLOR[fish?.rarity] || '#f4e4bc';
+      const color = t.rainbow ? '#ff66ff' : (RARITY_COLOR[fish?.rarity] || '#f4e4bc');
       this.toastText.setColor(color);
       const tags = [];
+      if (t.rainbow) tags.push('RAINBOW');
       if (t.perfect) tags.push('PERFECT');
       if (t.isNew) tags.push('NEW');
       const tagStr = tags.length ? `  [${tags.join(' · ')}]` : '';
@@ -113,7 +114,8 @@ export class HUDScene extends Phaser.Scene {
       if (t.catchBonus) bonusParts.push(`+${t.catchBonus}g`);
       if (t.perfectBonus) bonusParts.push(`+${t.perfectBonus}g perfect`);
       const bonusStr = bonusParts.length ? `  (${bonusParts.join(' ')})` : '';
-      this.toastText.setText(`Caught ${t.name} — sells for ${t.value}g${bonusStr}${tagStr}`);
+      const namePrefix = t.rainbow ? 'Rainbow ' : '';
+      this.toastText.setText(`Caught ${namePrefix}${t.name} — sells for ${t.value}g${bonusStr}${tagStr}`);
     }
     this.toastText.setAlpha(1);
     this.toastText.setVisible(true);

@@ -39,47 +39,63 @@ export function initState(registry) {
 }
 
 // --- Inventory -----------------------------------------------------------
-// Catches go here as bare species ids (duplicates count toward stack count).
-// Selling at the shop converts them to gold; the perfect-catch bonus is
-// awarded immediately at catch time as direct gold so it doesn't rot in
-// inventory.
+// Each entry is `{ speciesId, rainbow }`. Rainbow fish (10% roll at catch)
+// sell for 2× their species value. Selling at the shop converts entries to
+// gold; the perfect-catch bonus and +5g tip are paid immediately so they
+// don't depend on whether the player ever returns to sell.
 
-export function addToInventory(registry, speciesId) {
+export const RAINBOW_MULT = 2;
+
+function _entryValue(entry) {
+  const v = FISH[entry.speciesId]?.value || 0;
+  return entry.rainbow ? v * RAINBOW_MULT : v;
+}
+
+export function addToInventory(registry, speciesId, opts = {}) {
   const inv = registry.get('inventory') || [];
-  registry.set('inventory', [...inv, speciesId]);
+  registry.set('inventory', [...inv, { speciesId, rainbow: !!opts.rainbow }]);
 }
 
 export function getInventoryAggregate(registry) {
   const inv = registry.get('inventory') || [];
-  const counts = new Map();
-  for (const id of inv) counts.set(id, (counts.get(id) || 0) + 1);
-  const out = [];
-  for (const [id, count] of counts) {
-    const fish = FISH[id];
-    if (!fish) continue;
-    out.push({ speciesId: id, species: fish, count, totalValue: fish.value * count });
+  const buckets = new Map();
+  for (const e of inv) {
+    const key = `${e.speciesId}|${e.rainbow ? 1 : 0}`;
+    const b = buckets.get(key) || { speciesId: e.speciesId, rainbow: e.rainbow, count: 0 };
+    b.count++;
+    buckets.set(key, b);
   }
-  // Highest-value stack first so trophies are easy to spot.
+  const out = [];
+  for (const b of buckets.values()) {
+    const species = FISH[b.speciesId];
+    if (!species) continue;
+    const unitValue = b.rainbow ? species.value * RAINBOW_MULT : species.value;
+    out.push({
+      speciesId: b.speciesId, species, rainbow: b.rainbow,
+      count: b.count, unitValue, totalValue: unitValue * b.count
+    });
+  }
   out.sort((a, b) => b.totalValue - a.totalValue);
   return out;
 }
 
-export function sellSpecies(registry, speciesId, count = Infinity) {
+export function sellSpecies(registry, speciesId, rainbow = false, count = Infinity) {
   const inv = registry.get('inventory') || [];
   let remaining = count;
   const kept = [];
+  let value = 0;
   let sold = 0;
-  for (const id of inv) {
-    if (id === speciesId && remaining > 0) {
+  for (const e of inv) {
+    if (e.speciesId === speciesId && !!e.rainbow === !!rainbow && remaining > 0) {
+      value += _entryValue(e);
       sold++;
       remaining--;
     } else {
-      kept.push(id);
+      kept.push(e);
     }
   }
   if (sold === 0) return { sold: 0, value: 0 };
   registry.set('inventory', kept);
-  const value = (FISH[speciesId]?.value || 0) * sold;
   if (value > 0) addGold(registry, value);
   return { sold, value };
 }
@@ -88,7 +104,7 @@ export function sellAll(registry) {
   const inv = registry.get('inventory') || [];
   if (inv.length === 0) return { sold: 0, value: 0 };
   let total = 0;
-  for (const id of inv) total += FISH[id]?.value || 0;
+  for (const e of inv) total += _entryValue(e);
   registry.set('inventory', []);
   if (total > 0) addGold(registry, total);
   return { sold: inv.length, value: total };
@@ -96,8 +112,10 @@ export function sellAll(registry) {
 
 export function findRareInInventory(registry) {
   const inv = registry.get('inventory') || [];
-  for (const id of inv) {
-    if (FISH[id]?.rarity === 'rare') return FISH[id];
+  for (const e of inv) {
+    if (FISH[e.speciesId]?.rarity === 'rare') {
+      return { ...FISH[e.speciesId], rainbow: e.rainbow };
+    }
   }
   return null;
 }
@@ -112,14 +130,14 @@ export function getRiverNpcDeliveries(registry) {
 
 export function deliverRareToRiverNpc(registry) {
   const inv = registry.get('inventory') || [];
-  const idx = inv.findIndex(id => FISH[id]?.rarity === 'rare');
+  const idx = inv.findIndex(e => FISH[e.speciesId]?.rarity === 'rare');
   if (idx < 0) return null;
-  const speciesId = inv[idx];
+  const entry = inv[idx];
   const next = [...inv.slice(0, idx), ...inv.slice(idx + 1)];
   registry.set('inventory', next);
   addGold(registry, RIVER_NPC_REWARD);
   registry.set('riverNpcDeliveries', getRiverNpcDeliveries(registry) + 1);
-  return { species: FISH[speciesId], reward: RIVER_NPC_REWARD };
+  return { species: FISH[entry.speciesId], rainbow: entry.rainbow, reward: RIVER_NPC_REWARD };
 }
 
 // --- Quests --------------------------------------------------------------

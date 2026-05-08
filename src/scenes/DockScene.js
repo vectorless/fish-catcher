@@ -622,12 +622,14 @@ export class DockScene extends Phaser.Scene {
     if (!species) return;
 
     const { isNew } = recordCatch(this.registry, species.id);
-    addToInventory(this.registry, species.id);
+    const rainbow = Math.random() < 0.10;
+    addToInventory(this.registry, species.id, { rainbow });
     const catchBonus = 5;
     const newlyUnlocked = addGold(this.registry, catchBonus);
     this.registry.set('lastCatchToast', {
-      speciesId: species.id, name: species.name, value: species.value,
-      isNew, perfect: false, catchBonus, newlyUnlocked
+      speciesId: species.id, name: species.name,
+      value: rainbow ? species.value * 2 : species.value,
+      isNew, perfect: false, catchBonus, rainbow, newlyUnlocked
     });
 
     // Hide the sprite, schedule respawn elsewhere in the swim area.

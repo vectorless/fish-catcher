@@ -167,13 +167,15 @@ export class ShopScene extends Phaser.Scene {
     this.scrollContainer.add(sellAllBtn);
     y += rowH + gap + 4;
 
-    // One row per species
+    // One row per (species, rainbow) bucket
     for (const r of rows) {
-      const color = RARITY_COLOR[r.species.rarity] || '#f4e4bc';
-      const label = `${r.species.name}  ×${r.count}  →  ${r.totalValue}g`;
+      const color = r.rainbow ? '#ff66ff' : (RARITY_COLOR[r.species.rarity] || '#f4e4bc');
+      const namePrefix = r.rainbow ? 'Rainbow ' : '';
+      const label = `${namePrefix}${r.species.name}  ×${r.count}  →  ${r.totalValue}g`;
+      const fill = r.rainbow ? 0x3a1a3a : 0x223445;
       const rowC = this._sellRow(width / 2, y, rowW, rowH, label,
-        0x223445, Phaser.Display.Color.HexStringToColor(color).color,
-        () => this._handleSellSpecies(r.speciesId, r.species.name, r.count, r.totalValue));
+        fill, Phaser.Display.Color.HexStringToColor(color).color,
+        () => this._handleSellSpecies(r.speciesId, r.rainbow, r.species.name, r.totalValue));
       this.scrollContainer.add(rowC);
       y += rowH + gap;
     }
@@ -208,11 +210,12 @@ export class ShopScene extends Phaser.Scene {
     this._refresh();
   }
 
-  _handleSellSpecies(speciesId, name, count, value) {
-    const r = sellSpecies(this.registry, speciesId);
+  _handleSellSpecies(speciesId, rainbow, name, expectedValue) {
+    const r = sellSpecies(this.registry, speciesId, rainbow);
     if (r.sold === 0) return;
     this.feedback.setColor('#ffe27a');
-    this.feedback.setText(`Sold ${r.sold}× ${name} for ${r.value}g.`);
+    const prefix = rainbow ? 'Rainbow ' : '';
+    this.feedback.setText(`Sold ${r.sold}× ${prefix}${name} for ${r.value}g.`);
     this.feedback.setAlpha(1);
     this.tweens.killTweensOf(this.feedback);
     this.tweens.add({
