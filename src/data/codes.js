@@ -2,7 +2,6 @@
 // single-use per session (tracked in registry.redeemedCodes).
 
 export const CODES = {
-  '1234': { gold: 50,            label: '+50 gold' },
-  '2235': { gold: 250,           label: '+250 gold' },
-  '1226': { zone: 'leviathan',   label: 'Warped to The Leviathan Zone' }
+  '1234': { gold: 50,  label: '+50 gold' },
+  '2235': { gold: 250, label: '+250 gold' }
 };
