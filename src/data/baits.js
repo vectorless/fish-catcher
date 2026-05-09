@@ -38,7 +38,14 @@ export const BAITS = {
     rarityBias: { common: 0.1, uncommon: 0.7, rare: 3.5, epic: 4.0, legendary: 2.5 },
     color: 0xc466ff,
     blurb: 'Glows in the abyss. Calls the giants.'
+  },
+  ambrosia: {
+    id: 'ambrosia', name: 'Ambrosia Lure', price: 2500,
+    biteDelayMult: 0.7,
+    rarityBias: { common: 0.05, uncommon: 0.4, rare: 4.5, epic: 6.0, legendary: 5.0 },
+    color: 0xffd24a,
+    blurb: 'Sweet enough to lure legends from the deep.'
   }
 };
 
-export const BAIT_ORDER = ['worm', 'minnow', 'lure', 'jig', 'glow'];
+export const BAIT_ORDER = ['worm', 'minnow', 'lure', 'jig', 'glow', 'ambrosia'];

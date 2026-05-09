@@ -40,7 +40,21 @@ export const RODS = {
     luckBias: { common: 0.2, uncommon: 0.8, rare: 2.5, epic: 4.0, legendary: 3.0 },
     color: 0xffd24a,
     blurb: 'Forged for monsters of the deep.'
+  },
+  titan: {
+    id: 'titan', name: 'Titan Rod', price: 12000,
+    hitZoneMult: 5.0, perfectZoneMult: 0.50,
+    luckBias: { common: 0.1, uncommon: 0.6, rare: 3.0, epic: 5.5, legendary: 5.0 },
+    color: 0x4af0d2,
+    blurb: 'Tempered titanium core. Trophies feel inevitable.'
+  },
+  mythic: {
+    id: 'mythic', name: 'Mythic Rod', price: 50000,
+    hitZoneMult: 6.0, perfectZoneMult: 0.55,
+    luckBias: { common: 0.05, uncommon: 0.5, rare: 10.0, epic: 10.0, legendary: 10.0 },
+    color: 0xff4ad2,
+    blurb: '10× luck. The lake bends toward you.'
   }
 };
 
-export const ROD_ORDER = ['twig', 'bamboo', 'composite', 'master', 'legend'];
+export const ROD_ORDER = ['twig', 'bamboo', 'composite', 'master', 'legend', 'titan', 'mythic'];

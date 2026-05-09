@@ -31,7 +31,13 @@ export const TANKS = {
     oxygenSec: 150,
     color: 0xc466ff,
     blurb: 'Sealed mixed-gas rig. Two and a half minutes.'
+  },
+  gillsuit: {
+    id: 'gillsuit', name: 'Gill Suit', price: 12000,
+    oxygenSec: 600,
+    color: 0x4af0d2,
+    blurb: 'Bio-fabric draws oxygen straight from the water. Ten full minutes.'
   }
 };
 
-export const TANK_ORDER = ['lungs', 'copper', 'scuba', 'rebreather', 'aquanaut'];
+export const TANK_ORDER = ['lungs', 'copper', 'scuba', 'rebreather', 'aquanaut', 'gillsuit'];

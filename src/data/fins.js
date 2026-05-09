@@ -31,7 +31,13 @@ export const FINS = {
     swimSpeedMult: 3.5,
     color: 0xffd24a,
     blurb: 'Powered glide. The water hardly notices.'
+  },
+  jet: {
+    id: 'jet', name: 'Jet Propulsion Fins', price: 10000,
+    swimSpeedMult: 5.0,
+    color: 0xff4ad2,
+    blurb: 'Mini thrusters at the heel. Currents bow to you.'
   }
 };
 
-export const FIN_ORDER = ['barefoot', 'flippers', 'scuba_fins', 'dolphin_fins', 'hydrofoil'];
+export const FIN_ORDER = ['barefoot', 'flippers', 'scuba_fins', 'dolphin_fins', 'hydrofoil', 'jet'];

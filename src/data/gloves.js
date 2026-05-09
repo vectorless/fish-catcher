@@ -14,7 +14,13 @@ export const GLOVES = {
     allowed: ['common', 'uncommon', 'rare'],
     color: 0x4a4a5e,
     blurb: 'Steel-mesh grip. You can wrestle a rare to the surface.'
+  },
+  titanium: {
+    id: 'titanium', name: 'Titanium Grips', price: 2500,
+    allowed: ['common', 'uncommon', 'rare', 'epic', 'legendary'],
+    color: 0x4af0d2,
+    blurb: 'Spiked titanium claws. Nothing slips through.'
   }
 };
 
-export const GLOVE_ORDER = ['bare', 'mesh'];
+export const GLOVE_ORDER = ['bare', 'mesh', 'titanium'];

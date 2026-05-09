@@ -18,8 +18,10 @@ import {
 const CARD_W = 210;
 const CARD_H = 88;
 const CARD_GAP = 14;
-const SECTION_BLOCK = 140;        // total y advance per section (header + card + gap)
 const HEADER_TO_CARD_GAP = 22;
+const ROW_GAP = 14;               // between wrapped rows of cards
+const SECTION_BOTTOM_GAP = 30;    // padding below last row of a section
+const SIDE_MARGIN = 30;           // min horizontal padding on each side
 const CONTENT_TOP_Y = 130;
 const CONTENT_BOTTOM_PAD = 50;    // distance from scene bottom to scroll mask bottom
 
@@ -130,9 +132,9 @@ export class ShopScene extends Phaser.Scene {
       if (sec.kind === 'sell') {
         y = this._buildSellSection(y + 26);
       } else {
-        const cardCenterY = y + 18 + HEADER_TO_CARD_GAP + CARD_H / 2;
-        this._buildSection(sec, cardCenterY);
-        y += SECTION_BLOCK;
+        const rowsTopY = y + 18 + HEADER_TO_CARD_GAP;
+        const usedH = this._buildSection(sec, rowsTopY);
+        y = rowsTopY + usedH + SECTION_BOTTOM_GAP;
       }
     }
     this._contentH = y;
@@ -226,20 +228,32 @@ export class ShopScene extends Phaser.Scene {
     this._refresh();
   }
 
-  _buildSection(sec, cardCenterY) {
+  _buildSection(sec, rowsTopY) {
     const { width } = this.scale;
     const ownedSet = new Set(this.registry.get(sec.ownedKey) || sec.defaults);
     const equippedId = this.registry.get(sec.equippedKey) || sec.defaultId;
     const tiers = sec.order.map(id => sec.data[id]);
-    const totalW = tiers.length * CARD_W + (tiers.length - 1) * CARD_GAP;
-    let x = (width - totalW) / 2;
-    for (const item of tiers) {
-      const card = sec.factory.call(this, item, ownedSet, equippedId);
-      card.setPosition(x + CARD_W / 2, cardCenterY);
-      this.scrollContainer.add(card);
-      this[sec.listKey].push(card);
-      x += CARD_W + CARD_GAP;
+
+    const usable = Math.max(CARD_W, width - SIDE_MARGIN * 2);
+    const perRow = Math.max(1, Math.floor((usable + CARD_GAP) / (CARD_W + CARD_GAP)));
+    const rowCount = Math.ceil(tiers.length / perRow);
+
+    for (let r = 0; r < rowCount; r++) {
+      const rowItems = tiers.slice(r * perRow, r * perRow + perRow);
+      const rowW = rowItems.length * CARD_W + (rowItems.length - 1) * CARD_GAP;
+      const startX = (width - rowW) / 2;
+      const cy = rowsTopY + r * (CARD_H + ROW_GAP) + CARD_H / 2;
+      let x = startX;
+      for (const item of rowItems) {
+        const card = sec.factory.call(this, item, ownedSet, equippedId);
+        card.setPosition(x + CARD_W / 2, cy);
+        this.scrollContainer.add(card);
+        this[sec.listKey].push(card);
+        x += CARD_W + CARD_GAP;
+      }
     }
+
+    return rowCount * CARD_H + (rowCount - 1) * ROW_GAP;
   }
 
   _onWheel(_p, _o, _dx, dy) {
