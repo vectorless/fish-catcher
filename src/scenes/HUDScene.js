@@ -2,7 +2,7 @@
 // Listens to registry change events to keep readouts in sync.
 
 import Phaser from 'phaser';
-import { getCurrentZone, getEquippedRod, getEquippedBait, VARIANT_DISPLAY } from '../state.js';
+import { getCurrentZone, getEquippedRod, getEquippedBait, getEquippedBag, getInventoryCount, VARIANT_DISPLAY } from '../state.js';
 import { ZONES } from '../data/zones.js';
 import { FISH, RARITY_COLOR } from '../data/fish.js';
 
@@ -24,6 +24,10 @@ export class HUDScene extends Phaser.Scene {
 
     this.gearText = this.add.text(0, 42, '', {
       fontFamily: 'serif', fontSize: '13px', color: '#a8b6c4'
+    }).setScrollFactor(0).setDepth(1000).setOrigin(1, 0);
+
+    this.bagText = this.add.text(0, 60, '', {
+      fontFamily: 'serif', fontSize: '13px', color: '#9ec45f'
     }).setScrollFactor(0).setDepth(1000).setOrigin(1, 0);
 
     this.helpText = this.add.text(20, 0, 'A/D walk · SPACE cast/hook · S dive · W/SPACE ascend/descend · E shop · F fishdex · Z zones · Q quest · R redeem · T tutorial', {
@@ -56,11 +60,14 @@ export class HUDScene extends Phaser.Scene {
     this._refreshGold();
     this._refreshZone();
     this._refreshGear();
+    this._refreshBag();
 
     this.registry.events.on('changedata-gold', this._refreshGold, this);
     this.registry.events.on('changedata-currentZoneId', this._refreshZone, this);
     this.registry.events.on('changedata-equippedRodId', this._refreshGear, this);
     this.registry.events.on('changedata-equippedBaitId', this._refreshGear, this);
+    this.registry.events.on('changedata-equippedBagId', this._refreshBag, this);
+    this.registry.events.on('changedata-inventory', this._refreshBag, this);
     this.registry.events.on('changedata-lastCatchToast', this._onCatchToast, this);
 
     this.scale.on('resize', this._layout, this);
@@ -73,6 +80,7 @@ export class HUDScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.zoneText.setPosition(width - 20, 18);
     this.gearText.setPosition(width - 20, 42);
+    this.bagText.setPosition(width - 20, 60);
     this.helpText.setPosition(20, height - 12);
     this.toastText.setPosition(width / 2, 80);
     this.promptText.setPosition(width / 2, height - 50);
@@ -93,6 +101,14 @@ export class HUDScene extends Phaser.Scene {
     const rod = getEquippedRod(this.registry);
     const bait = getEquippedBait(this.registry);
     this.gearText.setText(`${rod.name} · ${bait.name}`);
+  }
+
+  _refreshBag() {
+    const bag = getEquippedBag(this.registry);
+    const count = getInventoryCount(this.registry);
+    const full = count >= bag.capacity;
+    this.bagText.setColor(full ? '#ff8888' : '#9ec45f');
+    this.bagText.setText(`${bag.name}: ${count}/${bag.capacity}${full ? '  (full!)' : ''}`);
   }
 
   _onCatchToast() {
@@ -165,6 +181,8 @@ export class HUDScene extends Phaser.Scene {
     this.registry.events.off('changedata-currentZoneId', this._refreshZone, this);
     this.registry.events.off('changedata-equippedRodId', this._refreshGear, this);
     this.registry.events.off('changedata-equippedBaitId', this._refreshGear, this);
+    this.registry.events.off('changedata-equippedBagId', this._refreshBag, this);
+    this.registry.events.off('changedata-inventory', this._refreshBag, this);
     this.registry.events.off('changedata-lastCatchToast', this._onCatchToast, this);
     this.scale.off('resize', this._layout, this);
   }

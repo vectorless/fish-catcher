@@ -12,8 +12,9 @@ const CARD_H = 110;
 const CARD_GAP_X = 14;
 const CARD_GAP_Y = 16;
 const SECTION_GAP = 30;
+const SIDE_MARGIN = 30;
 
-const RARITY_RANK = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+const RARITY_RANK = { godlike: 0, legendary: 1, epic: 2, rare: 3, uncommon: 4, common: 5 };
 
 export class FishdexScene extends Phaser.Scene {
   constructor() {
@@ -101,17 +102,24 @@ export class FishdexScene extends Phaser.Scene {
       this.scrollContainer.add(header);
       y += 44;
 
-      // Card row
-      const totalRowW = species.length * CARD_W + (species.length - 1) * CARD_GAP_X;
-      let x = (width - totalRowW) / 2;
-      for (const fish of species) {
-        const caught = hasCaught(this.registry, fish.id);
-        const card = this._makeFishCard(fish, caught, zoneIsUnlocked);
-        card.setPosition(x + CARD_W / 2, y + CARD_H / 2);
-        this.scrollContainer.add(card);
-        x += CARD_W + CARD_GAP_X;
+      // Card grid (wraps to multiple rows when there are more cards than fit)
+      const usable = Math.max(CARD_W, width - SIDE_MARGIN * 2);
+      const perRow = Math.max(1, Math.floor((usable + CARD_GAP_X) / (CARD_W + CARD_GAP_X)));
+      const rowCount = Math.ceil(species.length / perRow);
+      for (let r = 0; r < rowCount; r++) {
+        const rowItems = species.slice(r * perRow, r * perRow + perRow);
+        const rowW = rowItems.length * CARD_W + (rowItems.length - 1) * CARD_GAP_X;
+        let x = (width - rowW) / 2;
+        const cy = y + r * (CARD_H + CARD_GAP_Y) + CARD_H / 2;
+        for (const fish of rowItems) {
+          const caught = hasCaught(this.registry, fish.id);
+          const card = this._makeFishCard(fish, caught, zoneIsUnlocked);
+          card.setPosition(x + CARD_W / 2, cy);
+          this.scrollContainer.add(card);
+          x += CARD_W + CARD_GAP_X;
+        }
       }
-      y += CARD_H + SECTION_GAP;
+      y += rowCount * CARD_H + (rowCount - 1) * CARD_GAP_Y + SECTION_GAP;
     }
 
     this._contentH = y;

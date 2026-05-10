@@ -28,7 +28,7 @@ const CAST_MS = 600;
 const BITE_DELAY_MIN_MS = 1500;
 const BITE_DELAY_MAX_MS = 5000;
 const SWEEP_SPEED = 200;       // px/sec — base, scaled by species rarity
-const RARITY_SWEEP_MULT = { common: 1.0, uncommon: 1.4, rare: 1.9, epic: 2.5, legendary: 3.2 };
+const RARITY_SWEEP_MULT = { common: 1.0, uncommon: 1.4, rare: 1.9, epic: 2.5, legendary: 3.2, godlike: 4.2 };
 const BAR_W = 320;
 const BAR_H = 24;
 const MAX_SWEEPS = 2;
@@ -44,7 +44,10 @@ export class FishingController extends Phaser.Events.EventEmitter {
     this.landY = opts.landY;               // water surface y
     this.castRangeX = opts.castRangeX;     // px right of rod tip where bobber lands
     this.barCenter = opts.barCenter;
-    this.canCast = opts.canCast || (() => true);
+    // canCast() returns a string reason if the cast is blocked, or null/empty
+    // if the cast is allowed. Lets DockScene surface the right message
+    // (out of range, bag full, etc.) via the cast:rejected event.
+    this.canCast = opts.canCast || (() => null);
     this.paused = false;
 
     this.state = 'idle';
@@ -196,8 +199,9 @@ export class FishingController extends Phaser.Events.EventEmitter {
     if (this.state === 'idle') {
       this.bobber.setPosition(this.rodTip.x, this.rodTip.y);
       if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-        if (!this.canCast()) {
-          this.emit('cast:rejected');
+        const reason = this.canCast();
+        if (reason) {
+          this.emit('cast:rejected', reason);
         } else {
           this.cast();
         }

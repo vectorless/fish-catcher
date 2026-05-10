@@ -8,10 +8,11 @@ import { BAITS, BAIT_ORDER } from '../data/baits.js';
 import { TANKS, TANK_ORDER } from '../data/tanks.js';
 import { FINS, FIN_ORDER } from '../data/fins.js';
 import { GLOVES, GLOVE_ORDER } from '../data/gloves.js';
+import { BAGS, BAG_ORDER } from '../data/bags.js';
 import { RARITY_COLOR } from '../data/fish.js';
 import {
   buyOrEquipRod, buyOrEquipBait, buyOrEquipTank,
-  buyOrEquipFin, buyOrEquipGlove,
+  buyOrEquipFin, buyOrEquipGlove, buyOrEquipBag,
   getInventoryAggregate, sellSpecies, sellAll, VARIANT_DISPLAY
 } from '../state.js';
 
@@ -72,7 +73,9 @@ export class ShopScene extends Phaser.Scene {
       { kind: 'fin',   label: 'FINS',          order: FIN_ORDER,   data: FINS,   listKey: 'finCards',   factory: this._makeFinCard,
         ownedKey: 'ownedFins',   equippedKey: 'equippedFinId',   defaults: ['barefoot'], defaultId: 'barefoot' },
       { kind: 'glove', label: 'GLOVES',        order: GLOVE_ORDER, data: GLOVES, listKey: 'gloveCards', factory: this._makeGloveCard,
-        ownedKey: 'ownedGloves', equippedKey: 'equippedGloveId', defaults: ['bare'],     defaultId: 'bare' }
+        ownedKey: 'ownedGloves', equippedKey: 'equippedGloveId', defaults: ['bare'],     defaultId: 'bare' },
+      { kind: 'bag',   label: 'BAGS',          order: BAG_ORDER,   data: BAGS,   listKey: 'bagCards',   factory: this._makeBagCard,
+        ownedKey: 'ownedBags',   equippedKey: 'equippedBagId',   defaults: ['satchel'],  defaultId: 'satchel' }
     ];
     this._sections.forEach(s => {
       if (s.listKey) this[s.listKey] = [];
@@ -303,8 +306,11 @@ export class ShopScene extends Phaser.Scene {
     c.add(this.add.text(-CARD_W / 2 + 70, -CARD_H / 2 + 12, rod.name, {
       fontFamily: 'serif', fontSize: '15px', color: '#f4e4bc'
     }).setOrigin(0, 0));
+    const rodLuck = ['rare', 'epic', 'legendary', 'godlike']
+      .map(r => `${r[0].toUpperCase()}×${(rod.luckBias?.[r] ?? 0).toFixed(1)}`)
+      .join(' ');
     c.add(this.add.text(-CARD_W / 2 + 14, -2,
-      `Hit zone × ${rod.hitZoneMult.toFixed(1)} · Perfect ${(rod.perfectZoneMult * 100).toFixed(0)}%`, {
+      `Luck — ${rodLuck}`, {
       fontFamily: 'serif', fontSize: '11px', color: '#cbb98a'
     }).setOrigin(0, 0));
     c.add(this.add.text(-CARD_W / 2 + 14, CARD_H / 2 - 32, rod.blurb, {
@@ -331,8 +337,8 @@ export class ShopScene extends Phaser.Scene {
       fontFamily: 'serif', fontSize: '15px', color: '#f4e4bc'
     }).setOrigin(0, 0));
 
-    const biasParts = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-      .map(r => `${r[0].toUpperCase()} ×${(bait.rarityBias[r] ?? 0).toFixed(1)}`);
+    const biasParts = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'godlike']
+      .map(r => `${r[0].toUpperCase()}×${(bait.rarityBias[r] ?? 0).toFixed(1)}`);
     c.add(this.add.text(-CARD_W / 2 + 14, -2,
       `Bite ×${bait.biteDelayMult.toFixed(2)} · ${biasParts.join(' ')}`, {
       fontFamily: 'serif', fontSize: '10px', color: '#cbb98a'
@@ -424,14 +430,48 @@ export class ShopScene extends Phaser.Scene {
     c.add(this.add.text(-CARD_W / 2 + 46, -CARD_H / 2 + 10, glove.name, {
       fontFamily: 'serif', fontSize: '14px', color: '#f4e4bc'
     }).setOrigin(0, 0));
+    const tipLine = glove.grabBonus ? `  +${glove.grabBonus}g/grab` : '';
     c.add(this.add.text(-CARD_W / 2 + 14, -2,
-      `Grabs: ${glove.allowed.join(', ')}`, {
+      `Grabs: ${glove.allowed.join(', ')}${tipLine}`, {
       fontFamily: 'serif', fontSize: '11px', color: '#7fc8ff'
     }).setOrigin(0, 0));
     c.add(this.add.text(-CARD_W / 2 + 14, CARD_H / 2 - 28, glove.blurb, {
       fontFamily: 'serif', fontSize: '10px', color: '#9aa6b4', wordWrap: { width: CARD_W - 28 }
     }).setOrigin(0, 0));
     c.add(this._priceText(glove, owned, canAfford));
+    c.add(this._statusText(s));
+    return c;
+  }
+
+  _makeBagCard(bag, ownedSet, equippedId) {
+    const c = this.add.container(0, 0);
+    const owned = ownedSet.has(bag.id);
+    const active = equippedId === bag.id;
+    const canAfford = (this.registry.get('gold') ?? 0) >= bag.price;
+    const s = this._cardStyle(owned, active, canAfford);
+    c.add(this._bgFor(s, () => this._handleClick('bag', bag)));
+
+    // Bag icon: pouch body + flap
+    const iconX = -CARD_W / 2 + 26;
+    const iconY = -CARD_H / 2 + 28;
+    const pouch = this.add.rectangle(iconX, iconY, 22, 18, bag.color)
+      .setStrokeStyle(2, 0x000000);
+    const flap = this.add.triangle(iconX, iconY - 9,
+      -11, 0, 11, 0, 0, 6, bag.color)
+      .setStrokeStyle(2, 0x000000);
+    c.add([pouch, flap]);
+
+    c.add(this.add.text(-CARD_W / 2 + 50, -CARD_H / 2 + 10, bag.name, {
+      fontFamily: 'serif', fontSize: '14px', color: '#f4e4bc'
+    }).setOrigin(0, 0));
+    c.add(this.add.text(-CARD_W / 2 + 14, -2,
+      `Capacity: ${bag.capacity} fish`, {
+      fontFamily: 'serif', fontSize: '12px', color: '#7fc8ff'
+    }).setOrigin(0, 0));
+    c.add(this.add.text(-CARD_W / 2 + 14, CARD_H / 2 - 28, bag.blurb, {
+      fontFamily: 'serif', fontSize: '10px', color: '#9aa6b4', wordWrap: { width: CARD_W - 28 }
+    }).setOrigin(0, 0));
+    c.add(this._priceText(bag, owned, canAfford));
     c.add(this._statusText(s));
     return c;
   }
@@ -457,6 +497,7 @@ export class ShopScene extends Phaser.Scene {
     else if (kind === 'tank') r = buyOrEquipTank(this.registry, item.id);
     else if (kind === 'fin') r = buyOrEquipFin(this.registry, item.id);
     else if (kind === 'glove') r = buyOrEquipGlove(this.registry, item.id);
+    else if (kind === 'bag') r = buyOrEquipBag(this.registry, item.id);
     this._showFeedback(r, item.name);
     this._refresh();
   }

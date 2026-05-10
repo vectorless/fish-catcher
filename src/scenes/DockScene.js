@@ -14,7 +14,8 @@ import Phaser from 'phaser';
 import { FishingController } from '../controllers/FishingController.js';
 import {
   getCurrentZone, getFishPoolForZone, getEquippedTank, getEquippedFin,
-  getEquippedGlove, recordCatch, addToInventory, addGold, redeemCode,
+  getEquippedGlove, getEquippedBag, isInventoryFull, getInventoryCount,
+  recordCatch, addToInventory, addGold, redeemCode,
   getSecretForZone, isSecretFound, findSecret,
   rollCatchVariant, VARIANT_MULT
 } from '../state.js';
@@ -266,15 +267,18 @@ export class DockScene extends Phaser.Scene {
     // --- Secret chest in this zone (if not already found) ---
     this._buildSecretChest(zone, swimL, swimR, swimTop, swimBottom);
 
-    // --- River NPC (only spawned in the river zone) ---
-    this._buildRiverNpc(zone, pierTopY);
-
     this.uiRoot.add([
       sky, water, deep, beach, ...grains, wetStrip,
       body, head, rod, this.diver, title, blurb,
       this.questBox.sprite, this.questBox.lid, this.questBox.label, this.questBox.prompt
     ]);
     if (this.secretChest) this.uiRoot.add(this.secretChest);
+
+    // --- River NPC (only spawned in the river zone) ---
+    // Added AFTER the beach/player so its sprites render on top — Phaser
+    // container children paint in insertion order and ignore .depth on
+    // children, so anything added later sits visually above earlier siblings.
+    this._buildRiverNpc(zone, pierTopY);
 
     // --- Controller ---
     this.controller = new FishingController(this, {
@@ -284,11 +288,18 @@ export class DockScene extends Phaser.Scene {
       barCenter: { x: width / 2, y: height - 110 },
       canCast: () => this._canCastHere()
     });
-    this.controller.on('cast:rejected', () => this._flashPrompt('Aim past the pier — walk to the edge.'));
+    this.controller.on('cast:rejected', (reason) => this._flashPrompt(reason || 'Cannot cast.'));
   }
 
   _canCastHere() {
-    return this.rodTip.x + 200 > this.pierRightX + PIER_EDGE_MARGIN;
+    if (isInventoryFull(this.registry)) {
+      const bag = getEquippedBag(this.registry);
+      return `Bag full (${bag.capacity}/${bag.capacity}) — sell at the shop first.`;
+    }
+    if (!(this.rodTip.x + 200 > this.pierRightX + PIER_EDGE_MARGIN)) {
+      return 'Aim past the pier — walk to the edge.';
+    }
+    return null;
   }
 
   _buildShopBuilding(beachTopY) {
@@ -332,7 +343,9 @@ export class DockScene extends Phaser.Scene {
     this.riverNpc = null;
     if (zone.id !== 'river') return;
     const pierRightX = this.pierRightX;
-    const x = Math.min(pierRightX - 30, 220);
+    // Sit between the quest box (~x=96) and the player's start (~pierRightX-60).
+    // Clamp so the NPC stays comfortably on the beach, not on top of the player.
+    const x = Phaser.Math.Clamp(Math.floor(pierRightX * 0.45), 130, 180);
     const feetY = beachTopY;
     const body = this.add.rectangle(x, feetY, 14, 24, 0x9c4a3a)
       .setOrigin(0.5, 1).setStrokeStyle(2, 0x4a2e1a).setDepth(8);
@@ -622,10 +635,21 @@ export class DockScene extends Phaser.Scene {
     const species = fishSprite.getData('species');
     if (!species) return;
 
+    if (isInventoryFull(this.registry)) {
+      if (!this._bagFullRecently) {
+        this._bagFullRecently = true;
+        const bag = getEquippedBag(this.registry);
+        this._flashPrompt(`Bag full (${bag.capacity}/${bag.capacity}) — surface and sell.`, 2200);
+        this.time.delayedCall(2200, () => { this._bagFullRecently = false; });
+      }
+      return;
+    }
+
     const { isNew } = recordCatch(this.registry, species.id);
     const variant = rollCatchVariant();
     addToInventory(this.registry, species.id, { variant });
-    const catchBonus = 5;
+    const glove = getEquippedGlove(this.registry);
+    const catchBonus = 5 + (glove.grabBonus || 0);
     const newlyUnlocked = addGold(this.registry, catchBonus);
     this.registry.set('lastCatchToast', {
       speciesId: species.id, name: species.name,

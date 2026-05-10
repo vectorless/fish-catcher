@@ -7,6 +7,7 @@ import { BAITS } from './data/baits.js';
 import { TANKS } from './data/tanks.js';
 import { FINS } from './data/fins.js';
 import { GLOVES } from './data/gloves.js';
+import { BAGS } from './data/bags.js';
 import { CODES } from './data/codes.js';
 import { assignRandomQuest } from './data/quests.js';
 import { SECRETS } from './data/secrets.js';
@@ -26,6 +27,8 @@ export function initState(registry) {
   registry.set('equippedFinId', 'barefoot');
   registry.set('ownedGloves', ['bare']);
   registry.set('equippedGloveId', 'bare');
+  registry.set('ownedBags', ['satchel']);
+  registry.set('equippedBagId', 'satchel');
   registry.set('fishdex', []);
   registry.set('unlockedZones', ['pond']);
   registry.set('currentZoneId', 'pond');
@@ -70,8 +73,18 @@ function _entryValue(entry) {
 }
 
 export function addToInventory(registry, speciesId, opts = {}) {
+  if (isInventoryFull(registry)) return false;
   const inv = registry.get('inventory') || [];
   registry.set('inventory', [...inv, { speciesId, variant: opts.variant || null }]);
+  return true;
+}
+
+export function getInventoryCount(registry) {
+  return (registry.get('inventory') || []).length;
+}
+
+export function isInventoryFull(registry) {
+  return getInventoryCount(registry) >= getEquippedBag(registry).capacity;
 }
 
 export function getInventoryAggregate(registry) {
@@ -363,6 +376,29 @@ export function buyOrEquipGlove(registry, id) {
   }
   registry.set('ownedGloves', [...owned, id]);
   registry.set('equippedGloveId', id);
+  return { ok: true, bought: true };
+}
+
+// --- Bags ----------------------------------------------------------------
+
+export function getEquippedBag(registry) {
+  const id = registry.get('equippedBagId') || 'satchel';
+  return BAGS[id] || BAGS.satchel;
+}
+
+export function buyOrEquipBag(registry, id) {
+  const bag = BAGS[id];
+  if (!bag) return { ok: false, error: 'No such bag.' };
+  const owned = registry.get('ownedBags') || ['satchel'];
+  if (owned.includes(id)) {
+    registry.set('equippedBagId', id);
+    return { ok: true, equipped: true };
+  }
+  if (!spendGold(registry, bag.price)) {
+    return { ok: false, error: 'Not enough gold.' };
+  }
+  registry.set('ownedBags', [...owned, id]);
+  registry.set('equippedBagId', id);
   return { ok: true, bought: true };
 }
 
